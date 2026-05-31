@@ -1,0 +1,33 @@
+name: Merge Override Script
+
+on:
+  schedule:
+    # 每天 UTC 时间 20:00 运行（北京时间次日凌晨4点）
+    - cron: '0 0 * * *'
+  workflow_dispatch:   # 允许手动触发（方便测试）
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 运行合并脚本
+        run: python merge_override.py
+
+      - name: 提交生成的文件
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git add my_merged_override.js
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update merged script [skip ci]" && git push)
