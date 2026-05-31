@@ -583,23 +583,23 @@ const serviceConfigs = [
 // --- 3. 主入口 ---
 
 function main(config) {
-  // === 以下为用户自定义优先规则 ===
-  config.rules.unshift("DOMAIN-SUFFIX,libredmm.com,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,api.tmdb.org,DIRECT");
-  config.rules.unshift("DOMAIN,api.thejavdb.net,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,epg.pw,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,dmmsee.cyou,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,c97k.com,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,javdb573.com,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,javdb.com,US美国");
-  config.rules.unshift("DOMAIN-KEYWORD,dmm,JP日本");
-  config.rules.unshift("DOMAIN-KEYWORD,mgstage,JP日本");
-  config.rules.unshift("DOMAIN-SUFFIX,amazon.co.jp,JP日本");
-  config.rules.unshift("DOMAIN-SUFFIX,seesaa.jp,JP日本");
-  // === 自定义规则结束 ===
-
   if (!enable) return config
 
+
+  // === 以下为用户自定义优先规则 ===
+  rules.unshift("DOMAIN-SUFFIX,libredmm.com,DIRECT");
+  rules.unshift("DOMAIN-SUFFIX,api.tmdb.org,DIRECT");
+  rules.unshift("DOMAIN,api.thejavdb.net,DIRECT");
+  rules.unshift("DOMAIN-SUFFIX,epg.pw,DIRECT");
+  rules.unshift("DOMAIN-SUFFIX,dmmsee.cyou,DIRECT");
+  rules.unshift("DOMAIN-SUFFIX,c97k.com,DIRECT");
+  rules.unshift("DOMAIN-SUFFIX,javdb573.com,DIRECT");
+  rules.unshift("DOMAIN-SUFFIX,javdb.com,US美国");
+  rules.unshift("DOMAIN-KEYWORD,dmm,JP日本");
+  rules.unshift("DOMAIN-KEYWORD,mgstage,JP日本");
+  rules.unshift("DOMAIN-SUFFIX,amazon.co.jp,JP日本");
+  rules.unshift("DOMAIN-SUFFIX,seesaa.jp,JP日本");
+  // === 自定义规则结束 ===
   const proxies = config?.proxies || []
   const proxyCount = proxies.length
   const proxyProviderCount =
