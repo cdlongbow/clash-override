@@ -1,22 +1,10 @@
+/***
+ * Clash Verge Rev / Mihomo Party 优化脚本
+ * 原作者: dahaha-365 (YaNet)
+ * Github：https://github.com/dahaha-365/YaNet
+ */
 
-function main(config) {
-  // 先把你要直连的网站插到规则最前面
-  config.rules.unshift("DOMAIN-SUFFIX,libredmm.com,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,api.tmdb.org,DIRECT");
-  config.rules.unshift("DOMAIN,api.thejavdb.net,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,epg.pw,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,dmmsee.cyou,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,c97k.com,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,javdb573.com,DIRECT");
-  config.rules.unshift("DOMAIN-SUFFIX,javdb.com,US美国");
-  config.rules.unshift("DOMAIN-KEYWORD,dmm,JP日本");
-  config.rules.unshift("DOMAIN-KEYWORD,mgstage,JP日本");
-  config.rules.unshift("DOMAIN-SUFFIX,amazon.co.jp,JP日本");
-  config.rules.unshift("DOMAIN-SUFFIX,seesaa.jp,JP日本");
-  return config;
-
-  // === 以下来自远程脚本 ===
-
+function stringToArray(val) {
   if (Array.isArray(val)) return val
   if (typeof val !== 'string') return []
   return val
@@ -595,6 +583,21 @@ const serviceConfigs = [
 // --- 3. 主入口 ---
 
 function main(config) {
+  // === 以下为用户自定义优先规则 ===
+  config.rules.unshift("DOMAIN-SUFFIX,libredmm.com,DIRECT");
+  config.rules.unshift("DOMAIN-SUFFIX,api.tmdb.org,DIRECT");
+  config.rules.unshift("DOMAIN,api.thejavdb.net,DIRECT");
+  config.rules.unshift("DOMAIN-SUFFIX,epg.pw,DIRECT");
+  config.rules.unshift("DOMAIN-SUFFIX,dmmsee.cyou,DIRECT");
+  config.rules.unshift("DOMAIN-SUFFIX,c97k.com,DIRECT");
+  config.rules.unshift("DOMAIN-SUFFIX,javdb573.com,DIRECT");
+  config.rules.unshift("DOMAIN-SUFFIX,javdb.com,US美国");
+  config.rules.unshift("DOMAIN-KEYWORD,dmm,JP日本");
+  config.rules.unshift("DOMAIN-KEYWORD,mgstage,JP日本");
+  config.rules.unshift("DOMAIN-SUFFIX,amazon.co.jp,JP日本");
+  config.rules.unshift("DOMAIN-SUFFIX,seesaa.jp,JP日本");
+  // === 自定义规则结束 ===
+
   if (!enable) return config
 
   const proxies = config?.proxies || []
@@ -872,6 +875,4 @@ function main(config) {
   config['rule-providers'] = ruleProviders
 
   return config
-
-  return config;
 }
