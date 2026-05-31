@@ -2,7 +2,7 @@ name: Merge Override Script
 
 on:
   schedule:
-    # 每天 UTC 时间 20:00 运行（北京时间次日凌晨4点）
+    # 每天 UTC 时间 0:00 运行（北京时间早 8 点）
     - cron: '0 0 * * *'
   workflow_dispatch:   # 允许手动触发（方便测试）
 
