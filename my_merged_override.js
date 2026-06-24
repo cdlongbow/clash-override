@@ -181,7 +181,7 @@ const rules = [
   'PROCESS-NAME,com.carriez.flutter_hbb,直连',
   'GEOSITE,category-collaborate-cn,直连',
   'GEOSITE,category-container,默认节点',
-  'GEOSITE,category-netdisk-!cn,默认节点',
+  // 'GEOSITE,category-netdisk-!cn,默认节点',
   'RULE-SET,applications,下载软件',
 ]
 
@@ -681,7 +681,7 @@ function main(config) {
     'gso-max-size': 65536,
     'exclude-interface': ['NodeBabyLink'],
     'route-exclude-address': skipIps.filter((ip) => ip !== '198.18.0.0/16'),
-    'dns-hijack': ['any:53', 'tcp://any:53'],
+    'dns-hijack': ['any:53', 'tcp://any:53', 'tcp://any:853'],
   }
   config['geox-url'] = {
     geoip: `${githubProxy}https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip-lite.dat`,
