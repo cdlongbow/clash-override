@@ -199,9 +199,6 @@ const rules = [
   'DST-PORT,50000-50100,直连', // AnyDesk/RustDesk备用中继端口（关键！）
   'DST-PORT,5353,直连', // 向日葵内网穿透
   'DST-PORT,9118,直连', // 节点小宝
-  'PROCESS-NAME,RustDesk.exe,直连',
-  'PROCESS-NAME,RustDesk,直连',
-  'PROCESS-NAME,com.carriez.flutter_hbb,直连',
   'GEOSITE,category-collaborate-cn,直连',
   'GEOSITE,category-container,默认节点',
   // 'GEOSITE,category-netdisk-!cn,默认节点',
@@ -296,7 +293,7 @@ const dnsConfig = {
   'prefer-h3': true,
   'use-hosts': true,
   'use-system-hosts': true,
-  // 'respect-rules': true,
+  'respect-rules': true,
   'enhanced-mode': 'fake-ip',
   'fake-ip-range': '198.18.0.0/16',
   'fake-ip-filter-mode': 'whitelist',
@@ -307,13 +304,13 @@ const dnsConfig = {
     'geosite:category-games-!cn',
     'geosite:category-cdn-!cn',
     'geosite:telegram',
-    'geosite:facebook',
-    'geosite:x',
+    // 'geosite:x',
     'geosite:google',
     'geosite:amazon',
     'geosite:category-bank-jp',
     'geosite:category-communication',
-    // 'geosite:gfw',
+    'geosite:gfw',
+    // 'geosite:geolocation-!cn',
   ],
   nameserver: chinaDNS,
   'default-nameserver': defaultDNS,
@@ -671,18 +668,18 @@ function main(config) {
         ports: [443, 8443],
       },
     },
-    'skip-src-address': skipIps,
-    'skip-dst-address': skipIps,
-    'force-domain': [
-      '+.google.com',
-      '+.googleapis.com',
-      '+.googleusercontent.com',
-      '+.youtube.com',
-      '+.facebook.com',
-      '+.messenger.com',
-      '+.fbcdn.net',
-      'fbcdn-a.akamaihd.net',
-    ],
+    'skip-src-address': skipIps.filter((ip) => ip !== '198.18.0.0/16'),
+    // 'skip-dst-address': skipIps,
+    // 'force-domain': [
+    //   '+.google.com',
+    //   '+.googleapis.com',
+    //   '+.googleusercontent.com',
+    //   '+.youtube.com',
+    //   '+.facebook.com',
+    //   '+.messenger.com',
+    //   '+.fbcdn.net',
+    //   'fbcdn-a.akamaihd.net',
+    // ],
     'skip-domain': ['Mijia Cloud', '+.oray.com'],
   }
 
@@ -779,7 +776,7 @@ function main(config) {
     }
   })
 
-  const regionGroupNames = generatedRegionGroups.map((g) => g.name)
+  const regionGroupNames = generatedRegionGroups.map((g) => g.name).sort()
 
   if (otherProxies.length > 0) {
     generatedRegionGroups.push({
@@ -849,7 +846,7 @@ function main(config) {
     'GEOIP,private,直连,no-resolve',
     'GEOSITE,cn,直连',
     'GEOIP,cn,直连,no-resolve',
-    'GEOSITE,geolocation-!cn,其他外网',
+    // 'GEOSITE,geolocation-!cn,其他外网',
     'MATCH,其他外网'
   )
 
@@ -867,6 +864,9 @@ function main(config) {
       type: 'select',
       proxies: ['默认节点', '国内网站', ...regionGroupNames],
       icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Streaming!CN.png',
+      rules: [
+        'GEOSITE,geolocation-!cn,其他外网',
+      ],
     },
     {
       ...groupBaseOption,
@@ -879,7 +879,9 @@ function main(config) {
   )
 
   // 3.5 组装最终结果
-  config['proxy-groups'] = [...functionalGroups, ...generatedRegionGroups]
+  config['proxy-groups'] = [...functionalGroups, ...generatedRegionGroups.sort((a, b) =>
+    a.name.localeCompare(b.name, 'en', { sensitivity: 'base' })
+  )]
 
   config['rules'] = rules
   config['rule-providers'] = ruleProviders
