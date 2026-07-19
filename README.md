@@ -37,6 +37,18 @@ https://fastly.jsdelivr.net/gh/cdlongbow/clash-override@main/my_merged_override.
 1. 从远程拉取最新 YaNet 优化脚本
 2. 在 `if (!enable) return config` 语句后注入 `custom_rules` 中的自定义规则
 3. 自定义规则通过 `rules.unshift()` 确保优先级最高
+4. 自动注入两个全局策略组
+
+## 生成策略组
+
+脚本会额外注入以下全局策略组，位于「默认节点」列表最前面：
+
+| 策略组 | 类型 | 说明 |
+|--------|------|------|
+| 自动选择 | url-test | 从所有节点中自动选延迟最低的 |
+| 故障转移 | select | 手动选一个地区，内部 fallback 只在同地区节点间切换，挂了才切下一个 |
+
+故障转移会为每个有 ≥2 个节点的地区自动生成子组（如 故障转移-JP日本、故障转移-US美国），确保不跨地区跳避免被风控。
 
 ## 文件说明
 
