@@ -47,6 +47,61 @@ try:
         remote_code[insert_after:]
     )
 
+    # 插入 allProxyNames 声明（在 generatedRegionGroups 之前）
+    combined_code = combined_code.replace(
+        "  const generatedRegionGroups = []",
+        "  const allProxyNames = proxies.map((p) => p.name)\n\n  const generatedRegionGroups = []",
+    )
+
+    # 替换 functionalGroups 初始化块，注入自动选择 + 故障转移子组
+    global_groups = (
+        "  const functionalGroups = []\n\n"
+        "  // 全局自动选择（url-test）\n"
+        "  functionalGroups.push({\n"
+        "    ...groupBaseOption,\n"
+        "    name: '自动选择',\n"
+        "    type: 'url-test',\n"
+        "    tolerance: 50,\n"
+        "    proxies: allProxyNames,\n"
+        "    icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Available.png',\n"
+        "  })\n\n"
+        "  // 为每个地区生成故障转移子组（同名地区内 fallback）\n"
+        "  const fallbackGroupNames = []\n"
+        "  generatedRegionGroups.forEach(g => {\n"
+        "    if (g.proxies.length > 1) {\n"
+        "      const fbName = '故障转移-' + g.name\n"
+        "      fallbackGroupNames.push(fbName)\n"
+        "      generatedRegionGroups.push({\n"
+        "        ...groupBaseOption,\n"
+        "        name: fbName,\n"
+        "        type: 'fallback',\n"
+        "        url: 'https://www.gstatic.com/generate_204',\n"
+        "        proxies: g.proxies,\n"
+        "        icon: g.icon,\n"
+        "      })\n"
+        "    }\n"
+        "  })\n\n"
+        "  if (fallbackGroupNames.length > 0) {\n"
+        "    functionalGroups.push({\n"
+        "      ...groupBaseOption,\n"
+        "      name: '故障转移',\n"
+        "      type: 'select',\n"
+        "      proxies: fallbackGroupNames,\n"
+        "      icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Global.png',\n"
+        "    })\n"
+        "  }\n"
+    )
+    combined_code = combined_code.replace(
+        "  const functionalGroups = []",
+        global_groups,
+    )
+
+    # 更新"默认节点"的 proxies 列表，加入新策略组
+    combined_code = combined_code.replace(
+        "proxies: [...regionGroupNames, '其他节点', '直连']",
+        "proxies: ['自动选择', ...(fallbackGroupNames.length > 0 ? ['故障转移'] : []), ...regionGroupNames, '其他节点', '直连']",
+    )
+
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(combined_code)
 
