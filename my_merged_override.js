@@ -762,6 +762,8 @@ function main(config) {
     }
   }
 
+  const allProxyNames = proxies.map((p) => p.name)
+
   const generatedRegionGroups = []
   regionDefinitions.forEach((r) => {
     const groupData = regionGroups[r.name]
@@ -792,11 +794,49 @@ function main(config) {
   // 3.3 构建功能策略组
   const functionalGroups = []
 
+  // 全局自动选择（url-test）
+  functionalGroups.push({
+    ...groupBaseOption,
+    name: '自动选择',
+    type: 'url-test',
+    tolerance: 50,
+    proxies: allProxyNames,
+    icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Available.png',
+  })
+
+  // 为每个地区生成故障转移子组（同名地区内 fallback）
+  const fallbackGroupNames = []
+  generatedRegionGroups.forEach(g => {
+    if (g.proxies.length > 1) {
+      const fbName = '故障转移-' + g.name
+      fallbackGroupNames.push(fbName)
+      generatedRegionGroups.push({
+        ...groupBaseOption,
+        name: fbName,
+        type: 'fallback',
+        url: 'https://www.gstatic.com/generate_204',
+        proxies: g.proxies,
+        icon: g.icon,
+      })
+    }
+  })
+
+  if (fallbackGroupNames.length > 0) {
+    functionalGroups.push({
+      ...groupBaseOption,
+      name: '故障转移',
+      type: 'select',
+      proxies: fallbackGroupNames,
+      icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Global.png',
+    })
+  }
+
+
   functionalGroups.push({
     ...groupBaseOption,
     name: '默认节点',
     type: 'select',
-    proxies: [...regionGroupNames, '其他节点', '直连'].filter(
+    proxies: ['自动选择', ...(fallbackGroupNames.length > 0 ? ['故障转移'] : []), ...regionGroupNames, '其他节点', '直连'].filter(
       (n) => n !== '其他节点' || otherProxies.length > 0
     ),
     icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Proxy.png',
