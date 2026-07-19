@@ -102,6 +102,16 @@ try:
         "proxies: ['自动选择', ...(fallbackGroupNames.length > 0 ? ['故障转移'] : []), ...regionGroupNames, '其他节点', '直连']",
     )
 
+    # 所有服务策略组也加入自动选择和故障转移
+    combined_code = combined_code.replace(
+        "groupProxies = ['默认节点', ...regionGroupNames, '直连']",
+        "groupProxies = ['自动选择', '故障转移', '默认节点', ...regionGroupNames, '直连']",
+    )
+    combined_code = combined_code.replace(
+        "groupProxies = ['默认节点', '直连', ...regionGroupNames]",
+        "groupProxies = ['自动选择', '故障转移', '默认节点', '直连', ...regionGroupNames]",
+    )
+
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(combined_code)
 
