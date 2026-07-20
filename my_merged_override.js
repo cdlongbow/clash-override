@@ -599,7 +599,7 @@ function main(config) {
   rules.unshift("DOMAIN-SUFFIX,c97k.com,DIRECT");
   rules.unshift("DOMAIN-SUFFIX,javdb573.com,DIRECT");
   rules.unshift("DOMAIN-SUFFIX,javdb.com,US美国");
-  rules.unshift("IP-CIDR,15.204.105.50/32,自动选择,no-resolve");
+  rules.unshift("IP-CIDR,15.204.105.50/32,默认节点,no-resolve");
   rules.unshift("DOMAIN-KEYWORD,dmm,JP日本");
   rules.unshift("DOMAIN-KEYWORD,mgstage,JP日本");
   rules.unshift("DOMAIN-SUFFIX,amazon.co.jp,JP日本");
