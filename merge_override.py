@@ -52,7 +52,7 @@ try:
         "  const generatedRegionGroups = []",
         "  const allProxyNames = proxies.map((p) => p.name).filter(n => "
         "n !== '直连' && n !== '拒绝' && "
-        "!n.includes('中国') && !n.includes('CN') && !n.includes('China') && "
+        "!n.includes('中国') && !n.includes('CN') && "
         ")\n\n  const generatedRegionGroups = []",
     )
 
