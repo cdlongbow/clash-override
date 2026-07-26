@@ -762,7 +762,7 @@ function main(config) {
     }
   }
 
-  const allProxyNames = proxies.map((p) => p.name).filter(n => n !== '直连' && n !== '拒绝')
+  const allProxyNames = proxies.map((p) => p.name).filter(n => n !== '直连' && n !== '拒绝' && !n.includes('中国') && !n.includes('CN') && !n.includes('China') && )
 
   const generatedRegionGroups = []
   regionDefinitions.forEach((r) => {
