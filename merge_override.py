@@ -50,7 +50,10 @@ try:
     # 插入 allProxyNames 声明（在 generatedRegionGroups 之前）
     combined_code = combined_code.replace(
         "  const generatedRegionGroups = []",
-        "  const allProxyNames = proxies.map((p) => p.name).filter(n => n !== '直连' && n !== '拒绝')\n\n  const generatedRegionGroups = []",
+        "  const allProxyNames = proxies.map((p) => p.name).filter(n => "
+        "n !== '直连' && n !== '拒绝' && "
+        "!n.includes('中国') && !n.includes('CN') && !n.includes('China') && "
+        ")\n\n  const generatedRegionGroups = []",
     )
 
     # 替换 functionalGroups 初始化块，注入自动选择 + 故障转移子组
