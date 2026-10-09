@@ -3,6 +3,8 @@ import re
 
 # ============ 你的自定义规则 ============
 custom_rules = [
+    "rules.unshift(\"DOMAIN-SUFFIX,github.com,自动选择\");",
+    "rules.unshift(\"DOMAIN-SUFFIX,githubusercontent.com,自动选择\");",
     "rules.unshift(\"DOMAIN-SUFFIX,libredmm.com,DIRECT\");",
     "rules.unshift(\"DOMAIN-SUFFIX,api.tmdb.org,DIRECT\");",
     "rules.unshift(\"DOMAIN,api.thejavdb.net,DIRECT\");",
