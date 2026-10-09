@@ -565,6 +565,8 @@ function main(config) {
 
 
   // === 以下为用户自定义优先规则 ===
+  rules.unshift("DOMAIN-SUFFIX,github.com,自动选择");
+  rules.unshift("DOMAIN-SUFFIX,githubusercontent.com,自动选择");
   rules.unshift("DOMAIN-SUFFIX,libredmm.com,DIRECT");
   rules.unshift("DOMAIN-SUFFIX,api.tmdb.org,DIRECT");
   rules.unshift("DOMAIN,api.thejavdb.net,DIRECT");
