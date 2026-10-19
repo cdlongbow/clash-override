@@ -565,21 +565,56 @@ function main(config) {
 
 
   // === 以下为用户自定义优先规则 ===
-  rules.unshift("DOMAIN-SUFFIX,github.com,自动选择");
-  rules.unshift("DOMAIN-SUFFIX,githubusercontent.com,自动选择");
-  rules.unshift("DOMAIN-SUFFIX,libredmm.com,DIRECT");
-  rules.unshift("DOMAIN-SUFFIX,api.tmdb.org,DIRECT");
-  rules.unshift("DOMAIN,api.thejavdb.net,DIRECT");
-  rules.unshift("DOMAIN-SUFFIX,epg.pw,DIRECT");
-  rules.unshift("DOMAIN-SUFFIX,dmmsee.cyou,DIRECT");
-  rules.unshift("DOMAIN-SUFFIX,c97k.com,DIRECT");
-  rules.unshift("DOMAIN-SUFFIX,javdb573.com,DIRECT");
-  rules.unshift("DOMAIN-SUFFIX,javdb.com,US美国");
-  rules.unshift("IP-CIDR,15.204.105.50/32,自动选择,no-resolve");
-  rules.unshift("DOMAIN-KEYWORD,dmm,JP日本");
-  rules.unshift("DOMAIN-KEYWORD,mgstage,JP日本");
-  rules.unshift("DOMAIN-SUFFIX,amazon.co.jp,JP日本");
-  rules.unshift("DOMAIN-SUFFIX,seesaa.jp,JP日本");
+  rules.unshift(
+    "DOMAIN-SUFFIX,libredmm.com,DIRECT",
+    "DOMAIN-SUFFIX,api.tmdb.org,DIRECT",
+    "DOMAIN,api.thejavdb.net,DIRECT",
+    "DOMAIN-SUFFIX,epg.pw,DIRECT",
+    "DOMAIN-SUFFIX,dmmsee.cyou,DIRECT",
+    "DOMAIN-SUFFIX,c97k.com,DIRECT",
+    "DOMAIN-SUFFIX,javdb573.com,DIRECT",
+    "DOMAIN-SUFFIX,javdb.com,US美国",
+    "IP-CIDR,15.204.105.50/32,自动选择,no-resolve",
+    "DOMAIN-SUFFIX,github.com,默认节点",
+    "DOMAIN-SUFFIX,githubusercontent.com,默认节点",
+    "DOMAIN-SUFFIX,dmm.co.jp,JP日本",
+    "DOMAIN-SUFFIX,dmm.com,JP日本",
+    "DOMAIN-SUFFIX,fanza.jp,JP日本",
+    "DOMAIN-SUFFIX,fanza.tv,JP日本",
+    "DOMAIN-SUFFIX,mgstage.com,JP日本",
+    "DOMAIN-SUFFIX,prestige-av.com,JP日本",
+    "DOMAIN-SUFFIX,s1s1s1.com,JP日本",
+    "DOMAIN-SUFFIX,moodyz.com,JP日本",
+    "DOMAIN-SUFFIX,sod.co.jp,JP日本",
+    "DOMAIN-SUFFIX,ideapocket.com,JP日本",
+    "DOMAIN-SUFFIX,attackerstv.com,JP日本",
+    "DOMAIN-SUFFIX,kawaiikawaii.jp,JP日本",
+    "DOMAIN-SUFFIX,1pondo.tv,JP日本",
+    "DOMAIN-SUFFIX,caribbeancom.com,JP日本",
+    "DOMAIN-SUFFIX,heyzo.com,JP日本",
+    "DOMAIN-SUFFIX,tokyo-hot.com,JP日本",
+    "DOMAIN-SUFFIX,pacopacomama.com,JP日本",
+    "DOMAIN-SUFFIX,10musume.com,JP日本",
+    "DOMAIN-SUFFIX,muramura.tv,JP日本",
+    "DOMAIN-SUFFIX,knights-visual.com,JP日本",
+    "DOMAIN-SUFFIX,video.fc2.com,JP日本",
+    "DOMAIN-SUFFIX,adult.contents.fc2.com,JP日本",
+    "DOMAIN-SUFFIX,javlibrary.com,US美国",
+    "DOMAIN-SUFFIX,javbus.com,默认节点",
+    "DOMAIN-SUFFIX,avdanyuwiki.com,默认节点",
+    "DOMAIN-SUFFIX,javtrailers.com,默认节点",
+    "DOMAIN-SUFFIX,r18.dev,默认节点",
+    "DOMAIN-SUFFIX,missav.com,默认节点",
+    "DOMAIN-SUFFIX,missav.ws,默认节点",
+    "DOMAIN-SUFFIX,jable.tv,默认节点",
+    "DOMAIN-SUFFIX,netflav.com,默认节点",
+    "DOMAIN-SUFFIX,123av.com,默认节点",
+    "DOMAIN-SUFFIX,njav.tv,默认节点",
+    "DOMAIN-SUFFIX,amazon.co.jp,JP日本",
+    "DOMAIN-SUFFIX,seesaa.jp,JP日本",
+    "DOMAIN-KEYWORD,mgstage,JP日本",
+    "DOMAIN-KEYWORD,dmm,JP日本"
+  )
   // === 自定义规则结束 ===
   const proxies = config?.proxies || []
   const proxyCount = proxies.length
@@ -741,7 +776,25 @@ function main(config) {
     }
   }
 
-  const allProxyNames = proxies.map((p) => p.name).filter(n => n !== '直连' && n !== '拒绝' && !n.includes('中国') && !n.includes('CN') && !n.includes('China') && !n.includes('未知'))
+  const allProxyNames = []
+  Object.keys(regionGroups).forEach((key) => {
+    const list = regionGroups[key].proxies
+    for (let i = 0; i < list.length; i++) {
+      allProxyNames.push(list[i])
+    }
+  })
+  for (let i = 0; i < otherProxies.length; i++) {
+    allProxyNames.push(otherProxies[i])
+  }
+  const usableProxyNames = allProxyNames.filter(
+    (n) =>
+      n !== '直连' &&
+      n !== '拒绝' &&
+      !n.includes('中国') &&
+      !n.includes('CN') &&
+      !n.includes('China') &&
+      !n.includes('未知')
+  )
 
   const generatedRegionGroups = []
   regionDefinitions.forEach((r) => {
@@ -773,23 +826,22 @@ function main(config) {
   // 3.3 构建功能策略组
   const functionalGroups = []
 
-  // 全局自动选择（url-test）
   functionalGroups.push({
     ...groupBaseOption,
     name: '自动选择',
     type: 'url-test',
     tolerance: 50,
-    proxies: allProxyNames,
+    proxies: usableProxyNames.length > 0 ? usableProxyNames : ['直连'],
     icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Available.png',
   })
 
-  // 为每个地区生成故障转移子组（同名地区内 fallback）
+  const fallbackGroups = []
   const fallbackGroupNames = []
-  generatedRegionGroups.forEach(g => {
-    if (g.proxies.length > 1) {
+  generatedRegionGroups.forEach((g) => {
+    if (g.name !== '其他节点' && Array.isArray(g.proxies) && g.proxies.length > 1) {
       const fbName = '故障转移-' + g.name
       fallbackGroupNames.push(fbName)
-      generatedRegionGroups.push({
+      fallbackGroups.push({
         ...groupBaseOption,
         name: fbName,
         type: 'fallback',
@@ -799,6 +851,9 @@ function main(config) {
       })
     }
   })
+  for (let i = 0; i < fallbackGroups.length; i++) {
+    generatedRegionGroups.push(fallbackGroups[i])
+  }
 
   if (fallbackGroupNames.length > 0) {
     functionalGroups.push({
@@ -839,9 +894,9 @@ function main(config) {
       if (svc.reject) {
         groupProxies = ['拒绝', '直连', '默认节点']
       } else if (svc.key === 'biliintl' || svc.key === 'bahamut') {
-        groupProxies = ['自动选择', '故障转移', '默认节点', '直连', ...regionGroupNames]
+        groupProxies = ['自动选择', ...(fallbackGroupNames.length > 0 ? ['故障转移'] : []), '默认节点', '直连', ...regionGroupNames]
       } else {
-        groupProxies = ['自动选择', '故障转移', '默认节点', ...regionGroupNames, '直连']
+        groupProxies = ['自动选择', ...(fallbackGroupNames.length > 0 ? ['故障转移'] : []), '默认节点', ...regionGroupNames, '直连']
       }
 
       functionalGroups.push({
@@ -880,7 +935,7 @@ function main(config) {
       ...groupBaseOption,
       name: '其他外网',
       type: 'select',
-      proxies: ['默认节点', '国内网站', ...regionGroupNames],
+      proxies: ['自动选择', ...(fallbackGroupNames.length > 0 ? ['故障转移'] : []), '默认节点', '国内网站', ...regionGroupNames],
       icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Streaming!CN.png',
       rules: ['GEOSITE,geolocation-!cn,其他外网'],
     },

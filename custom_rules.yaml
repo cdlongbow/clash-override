@@ -1,0 +1,66 @@
+# 自定义优先分流规则
+# 越靠前优先级越高（会插入到 Clash rules 最前面）
+# 格式与 Clash 规则语法一致，可用策略组：
+#   DIRECT / 拒绝 / 自动选择 / 故障转移 / 默认节点
+#   HK香港、US美国、JP日本、KR韩国、SG新加坡、TW台湾省、GB英国、DE德国 等
+
+rules:
+  # 直连（具体域名放在宽泛 keyword 之前，避免被误伤）
+  - DOMAIN-SUFFIX,libredmm.com,DIRECT
+  - DOMAIN-SUFFIX,api.tmdb.org,DIRECT
+  - DOMAIN,api.thejavdb.net,DIRECT
+  - DOMAIN-SUFFIX,epg.pw,DIRECT
+  - DOMAIN-SUFFIX,dmmsee.cyou,DIRECT
+  - DOMAIN-SUFFIX,c97k.com,DIRECT
+  - DOMAIN-SUFFIX,javdb573.com,DIRECT
+
+  # 指定节点
+  - DOMAIN-SUFFIX,javdb.com,US美国
+  - IP-CIDR,15.204.105.50/32,自动选择,no-resolve
+
+  # GitHub
+  - DOMAIN-SUFFIX,github.com,默认节点
+  - DOMAIN-SUFFIX,githubusercontent.com,默认节点
+
+  # 日本 AV 官网（需日本 IP）
+  - DOMAIN-SUFFIX,dmm.co.jp,JP日本
+  - DOMAIN-SUFFIX,dmm.com,JP日本
+  - DOMAIN-SUFFIX,fanza.jp,JP日本
+  - DOMAIN-SUFFIX,fanza.tv,JP日本
+  - DOMAIN-SUFFIX,mgstage.com,JP日本
+  - DOMAIN-SUFFIX,prestige-av.com,JP日本
+  - DOMAIN-SUFFIX,s1s1s1.com,JP日本
+  - DOMAIN-SUFFIX,moodyz.com,JP日本
+  - DOMAIN-SUFFIX,sod.co.jp,JP日本
+  - DOMAIN-SUFFIX,ideapocket.com,JP日本
+  - DOMAIN-SUFFIX,attackerstv.com,JP日本
+  - DOMAIN-SUFFIX,kawaiikawaii.jp,JP日本
+  - DOMAIN-SUFFIX,1pondo.tv,JP日本
+  - DOMAIN-SUFFIX,caribbeancom.com,JP日本
+  - DOMAIN-SUFFIX,heyzo.com,JP日本
+  - DOMAIN-SUFFIX,tokyo-hot.com,JP日本
+  - DOMAIN-SUFFIX,pacopacomama.com,JP日本
+  - DOMAIN-SUFFIX,10musume.com,JP日本
+  - DOMAIN-SUFFIX,muramura.tv,JP日本
+  - DOMAIN-SUFFIX,knights-visual.com,JP日本
+  - DOMAIN-SUFFIX,video.fc2.com,JP日本
+  - DOMAIN-SUFFIX,adult.contents.fc2.com,JP日本
+
+  # 常见检索 / 在线站
+  - DOMAIN-SUFFIX,javlibrary.com,US美国
+  - DOMAIN-SUFFIX,javbus.com,默认节点
+  - DOMAIN-SUFFIX,avdanyuwiki.com,默认节点
+  - DOMAIN-SUFFIX,javtrailers.com,默认节点
+  - DOMAIN-SUFFIX,r18.dev,默认节点
+  - DOMAIN-SUFFIX,missav.com,默认节点
+  - DOMAIN-SUFFIX,missav.ws,默认节点
+  - DOMAIN-SUFFIX,jable.tv,默认节点
+  - DOMAIN-SUFFIX,netflav.com,默认节点
+  - DOMAIN-SUFFIX,123av.com,默认节点
+  - DOMAIN-SUFFIX,njav.tv,默认节点
+
+  # 日本站点（DOMAIN-KEYWORD 较宽，放最后）
+  - DOMAIN-SUFFIX,amazon.co.jp,JP日本
+  - DOMAIN-SUFFIX,seesaa.jp,JP日本
+  - DOMAIN-KEYWORD,mgstage,JP日本
+  - DOMAIN-KEYWORD,dmm,JP日本
