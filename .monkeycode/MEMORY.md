@@ -1,45 +1,45 @@
-# User Instruction Memory
+# 用户指令记忆（MEMORY）
 
-This file records user instructions, preferences, and teachings for reference in future interactions.
+这个文件记录老板给助手立的规矩、偏好，以及助手在项目里踩坑学到的经验。
+作用：以后新开对话、或者换了另一个助手，拉下代码先读这个文件，就能按已有的习惯继续干活，不用你重新交代一遍。
 
-## Format
+## 一条记录长什么样
 
-### User Instruction Entry
-User instruction entries should follow this format:
+老板立的规矩，按这个格式写：
 
-[User Instruction Summary]
-- Date: [YYYY-MM-DD]
-- Context: [Mentioned scenario or time]
+[一句话概括这条规矩]
+- Date（日期）: 2026-10-31
+- Context（背景）: 什么时候、因为发生了什么事说的
+- Instructions（具体条款）:
+  - 一条一行，写清楚「以后该怎么做」
+
+助手自己在干活中发现的项目经验，多加一行分类：
+
+[一句话概括这条经验]
+- Date（日期）: 2026-10-31
+- Context（背景）: 助手做哪件事时发现的
+- Category（分类）: 运维部署 / 构建方法 / 测试方法 / 排查调试 / 流程协作 / 环境配置
+- Instructions（具体条款）:
+  - 一条一行
+
+`Date`、`Context`、`Category`、`Instructions` 这四个字段名保留英文，是为了让程序也能认出结构；除此之外全部用中文写。
+
+## 记什么、不记什么
+
+- 该记：服务器和部署信息、构建命令、排查思路、协作流程、环境配置、你对助手的直接要求
+- 不该记：翻代码就能得到的东西（比如某个函数在哪个文件、参数是什么）、别处文档已经写明白的内容、某次任务的流水账
+- 写之前先查重，意思重复的就并进老条目，别新开一条
+
+## 条目
+
+[禁止擅自改代码、禁止擅自提交推送、只推当前分支]
+- Date: 2026-10-31（北京时间）
+- Context: 用户看完前几轮改动后新要求补上的红线，优先级高于本文件其他所有条目
 - Instructions:
-  - [Content of user teaching or instruction, described line by line]
-
-### Project Knowledge Entry
-Entries discovered by the Agent during task execution should follow this format:
-
-[Project Knowledge Summary]
-- Date: [YYYY-MM-DD]
-- Context: Discovered by Agent while performing [specific task description]
-- Category: [Operations & Deployment|Build Methods|Testing Methods|Troubleshooting & Debugging|Workflow & Collaboration|Environment Configuration]
-- Instructions:
-  - [Specific knowledge points, described line by line]
-
-## Deduplication Strategy
-- Before adding a new entry, check for similar or identical instructions.
-- If a duplicate is found, skip the new entry or merge it with the existing one.
-- When merging, update the context or date information.
-- This helps avoid redundant entries and keeps the memory file tidy.
-
-## Entries
-
-[任何写入后必须回读并扫描异常字符]
-- Date: 2026-10-31
-- Context: 用户在代码审查后的 P0 改动交付时提出；此前 Agent 用 Edit/Python 脚本写文件时出现过字面量被截断损坏（如 DOMAIN-SUFFIX,a.com 被写成残缺串）
-- Instructions:
-  - 任何写文件操作（Write / Edit / 脚本落盘）完成后必须立刻回读被改动的文件确认内容，禁止写完即认为成功
-  - 回读时同步做异常字符扫描：U+FFFD、零宽字符（U+200B/200C/200D）、BOM、NBSP、U+2028/2029、C0/C1 控制字符（制表符除外）、代理项与未分配码点
-  - 回读时核对关键内容完整性：关键标识符/字面量出现次数、文件结构（Python 可编译、测试函数数量、Markdown 代码围栏配对、中文括号配对）
-  - 发现损坏立即修好并重新回读，修完再复跑构建或测试再交付
-
+  - 没有得到用户明确同意，一行代码都不许动。想改先说清楚改哪个文件、改成什么样、为什么，等回复「改」再动手
+  - 没有得到用户明确同意，禁止 `git commit`、`git push`、建 PR/MR。做完活儿只汇报「改了什么、怎么验证的」，然后问要不要提交
+  - 只往用户当前所在的分支推送。禁止 `git checkout -b`、`git switch -c`、或在别处建分支再合并，即使用户之前某次建过也不作为先例
+  - 用户说了「改」「提交」「推送」才算授权，且只对本次说的事有效，下次还得重新问
 
 [用户是编程小白，回复用中文大白话 + 北京时间]
 - Date: 2026-10-31（北京时间 12:29，Asia/Shanghai）
@@ -50,10 +50,21 @@ Entries discovered by the Agent during task execution should follow this format:
   - 用大白话讲，减少术语；确实用到术语时随手补一句解释
   - 尽量举例子或给对照场景，例如用「订阅里 直连|双线 这类条目」讲清剔除规则的效果
   - 先给结论和怎么操作，再按需补原理，讲明白就收
+  - 文档类交付物（含本文件）正文用中文写，别塞大段英文
 
-[.monkeycode/MEMORY.md 需要入库复用]
+[任何写入后必须回读并扫描异常字符]
+- Date: 2026-10-31
+- Context: 用户在代码审查后的 P0 改动交付时提出；此前 Agent 用 Edit/Python 脚本写文件时出现过字面量被截断损坏（如 DOMAIN-SUFFIX,a.com 被写成残缺串）
+- Instructions:
+  - 任何写文件操作（Write / Edit / 脚本落盘）完成后必须立刻回读被改动的文件确认内容，禁止写完即认为成功
+  - 回读时同步做异常字符扫描：U+FFFD、零宽字符（U+200B/200C/200D）、BOM、NBSP、U+2028/2029、C0/C1 控制字符（制表符除外）、代理项与未分配码点
+  - 回读时核对关键内容完整性：关键标识符/字面量出现次数、文件结构（Python 可编译、测试函数数量、Markdown 代码围栏配对、中文括号配对）
+  - 发现损坏立即修好并重新回读，修完再复跑构建或测试再交付
+
+[本文件需要入库复用]
 - Date: 2026-10-31
 - Context: 用户要求把记忆文件提交进仓库，方便后续会话和其他 Agent 复用
 - Instructions:
-  - `.monkeycode/MEMORY.md` 纳入 git 跟踪，内容有新增或修订时随当次改动一起提交
+  - `.monkeycode/MEMORY.md` 由 git 跟踪，内容变化后随当次改动一起入库
+  - 本条只解决「该不该被 git 跟踪」，具体何时 commit / push 仍受最上面那条红线约束，先问再动
   - 提交只带 MEMORY.md，`.monkeycode-tmp-files/` 这类临时目录保持忽略
