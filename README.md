@@ -107,13 +107,28 @@ python inspect_groups.py --json
 
 ### 3. 导入 Clash 客户端
 
-将生成的 `my_merged_override.js` 导入 Clash Verge Rev 或 Mihomo Party 的覆盖脚本配置中。也可以直接使用 jsDelivr 链接导入：
+将生成的 `my_merged_override.js` 导入 Clash Verge Rev 或 Mihomo Party 的覆盖脚本配置中，也可以直接用下面的链接导入。
+
+jsDelivr（国内一般更快）：
 
 ```
 https://fastly.jsdelivr.net/gh/cdlongbow/clash-override@main/my_merged_override.js
 ```
 
-想固定版本、不想被上游自动构建影响，把 `@main` 换成发布标签，例如 `@v1.0`；回滚时换回旧标签即可。
+GitHub 原始地址（raw）：
+
+```
+https://raw.githubusercontent.com/cdlongbow/clash-override/main/my_merged_override.js
+```
+
+两条链接里的 `main` 是跟随自动构建的最新版。想固定版本，把 `main` 换成发布标签：
+
+```
+https://fastly.jsdelivr.net/gh/cdlongbow/clash-override@v1.0/my_merged_override.js
+https://raw.githubusercontent.com/cdlongbow/clash-override/v1.0/my_merged_override.js
+```
+
+`v1.0` 的内容不再变化，适合长期固定；想升级或回滚，换标签号就行。两种域名各有各的毛病：jsDelivr 刚推的新 tag 要等几分钟缓存生效，`raw.githubusercontent.com` 在部分网络下会连不上，一个不通就换另一个。
 
 ## 工作原理
 
