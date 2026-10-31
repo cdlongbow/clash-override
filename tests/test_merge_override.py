@@ -17,6 +17,16 @@ function main(config) {
 
   const generatedRegionGroups = []
 
+  if (otherProxies.length > 0) {
+    generatedRegionGroups.push({
+      ...groupBaseOption,
+      name: '其他节点',
+      type: 'select',
+      proxies: otherProxies,
+      icon: 'https://example.com/world.png',
+    })
+  }
+
   const functionalGroups = []
 
   functionalGroups.push({
@@ -443,38 +453,53 @@ def test_load_rule_config_rejects_bad_expected_sha256(tmp_path: Path):
 
 
 def test_merge_script_renders_auto_select_limit():
-    limited = mo.merge_script(FIXTURE, [], 12)
+    limited = mo.merge_script(FIXTURE, [], mo.MergeOptions(auto_select_max=12))
     assert "const autoSelectMax = 12" in limited
     assert "const autoSelectMax = 80" not in limited
 
 
-def test_auto_select_sampling_is_bounded_and_balanced():
+def test_auto_select_sampling_and_proxy_exclusion():
     node = shutil.which("node")
     if node is None:
         pytest.skip("node not available")
-    usable = (
-        [f"R1 node {i}" for i in range(1, 61)]
-        + [f"R2 node {i}" for i in range(1, 41)]
-        + ["Extra-1"]
-    )
+    r1 = [f"R1 node {i}" for i in range(1, 61)]
+    r2 = [f"R2 node {i}" for i in range(1, 41)]
+    options = mo.MergeOptions(auto_select_max=20)
     js = (
         "const groupBaseOption = {}\n"
-        "const regionGroups = { R1: { proxies: " + json.dumps(usable[:60], ensure_ascii=False)
-        + " }, R2: { proxies: " + json.dumps(usable[60:100], ensure_ascii=False) + " } }\n"
-        "const otherProxies = " + json.dumps(["Extra-1"]) + "\n"
-        + mo.ALL_PROXY_NAMES_NEW
+        "const regionGroups = { R1: { proxies: "
+        + json.dumps(r1 + ["\u76f4\u8fde|\u53cc\u7ebf"], ensure_ascii=False)
+        + " }, R2: { proxies: "
+        + json.dumps(r2, ensure_ascii=False)
+        + " } }\n"
+        "const otherProxies = "
+        + json.dumps(
+            ["Extra-1", "\u76f4\u8fde|\u4ec5IPv4", "Gateway Ad"], ensure_ascii=False
+        )
         + "\n"
-        + mo.render_functional_groups_js(20)
-        + "\nconsole.log(JSON.stringify(autoSelectProxies))\n"
+        "const proxies = "
+        + json.dumps(
+            [
+                {"name": "\u76f4\u8fde|\u53cc\u7ebf", "type": "vless"},
+                {"name": "\u76f4\u8fde|\u4ec5IPv4", "type": "vless"},
+                {"name": "Gateway Ad", "type": "direct"},
+            ],
+            ensure_ascii=False,
+        )
+        + "\n"
+        + mo.render_all_proxy_names_js(options)
+        + "\n"
+        + mo.render_functional_groups_js(options)
+        + "\nconsole.log(JSON.stringify({ auto: autoSelectProxies, other: otherNodeNames }))\n"
     )
     raw = subprocess.run([node, "-e", js], capture_output=True, text=True, check=True).stdout
     picked = json.loads(raw.strip().splitlines()[-1])
-    assert len(picked) == 20
-    r1 = [n for n in picked if n.startswith("R1")]
-    r2 = [n for n in picked if n.startswith("R2")]
-    assert len(r1) >= 8 and len(r2) >= 8 and "Extra-1" in picked
-
-
+    auto = picked["auto"]
+    assert len(auto) == 20
+    assert len([n for n in auto if n.startswith("R1")]) >= 8
+    assert len([n for n in auto if n.startswith("R2")]) >= 8
+    assert all("\u76f4\u8fde" not in n for n in auto)
+    assert picked["other"] == ["Extra-1"]
 def test_assert_unique_policy_names_rejects_duplicate():
     script = "name: '默认节点',\nname: '默认节点',\nname: '其他外网',"
     with pytest.raises(mo.MergeError, match="重复的策略名"):
@@ -502,3 +527,38 @@ def test_main_cli_auto_select_max_overrides_yaml(tmp_path: Path):
     )
     assert code == 0
     assert "const autoSelectMax = 0" in output.read_text(encoding="utf-8")
+
+
+def test_load_rule_config_parses_group_and_drop_options(tmp_path: Path):
+    text = (
+        "rules:\n  - "
+        + RULE_OK
+        + "\nother_group_type: select\ndrop_proxy_types:\n  - Dumb\ndrop_name_tokens:\n  - AD\n"
+    )
+    config = mo.load_rule_config(write_yaml(tmp_path, text))
+    assert config.other_group_type == "select"
+    assert config.drop_proxy_types == ("dumb",)
+    assert config.drop_name_tokens == ("ad",)
+
+
+def test_load_rule_config_rejects_bad_other_group_type(tmp_path: Path):
+    text = "rules:\n  - " + RULE_OK + "\nother_group_type: fallback\n"
+    with pytest.raises(mo.MergeError, match="other_group_type"):
+        mo.load_rule_config(write_yaml(tmp_path, text))
+
+
+def test_other_group_type_select_keeps_manual_choice():
+    merged = mo.merge_script(FIXTURE, [], mo.MergeOptions(other_group_type="select"))
+    assert "      type: 'select',\n      proxies: otherNodeNames," in merged
+    assert "tolerance: 50,\n      proxies: otherNodeNames," not in merged
+
+
+def test_other_group_type_url_test_by_default():
+    merged = mo.merge_script(FIXTURE, [])
+    assert "      type: 'url-test',\n      tolerance: 50,\n      proxies: otherNodeNames," in merged
+
+
+def test_other_nodes_get_failover_group():
+    merged = mo.merge_script(FIXTURE, [])
+    assert "if (Array.isArray(g.proxies) && g.proxies.length > 1) {" in merged
+    assert "otherProxies.length > 0" not in merged

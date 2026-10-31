@@ -25,7 +25,16 @@ auto_select_max: 80
 # 可选：锁定上游脚本 sha256，全部源都不匹配时报错，防上游被替换后无感生效
 expected_sha256:
   - 96dd4374113a4df2d4e90ad1de5b17964581de1d6c41177faee8b13da6fc8215
+
+# 可选：「其他节点」组类型，url-test 自动测速（默认），select 保留手动选
+other_group_type: url-test
+
+# 可选：从自建组里剔除的代理类型与名字前缀（默认值见下）
+drop_proxy_types: [direct, reject, reject-drop, pass, compatible]
+drop_name_tokens: [直连, 拒绝, 放行, 屏蔽, 拦截, direct, reject, pass, compatible]
 ```
+
+订阅里常见的入口类条目会被自动剔除，不再混进「其他节点」「自动选择」：`type` 属于 `drop_proxy_types` 的条目（direct / reject 等），以及名字第一个片段命中 `drop_name_tokens` 的条目（例如 `直连|双线` 的首段 `直连`）。片段按 `|`、`/`、`-`、`_`、`.`、`,`、`:`、空格切分，命中规则是整段相等，因此 `HK Direct 专线` 这类真节点会被保留。想再剔除公益订阅里的广告条目，把它的名字首段加进 `drop_name_tokens` 即可。
 
 规则类型有白名单校验：`DOMAIN` / `DOMAIN-SUFFIX` / `DOMAIN-KEYWORD` / `DOMAIN-REGEX` / `GEOSITE` / `GEOIP` / `IP-CIDR` / `IP-CIDR6` / `SRC-IP-CIDR` / `IP-SUFFIX` / `DST-PORT` / `SRC-PORT` / `PROCESS` / `PROCESS-NAME` / `RULE-SET` / `NETWORK` / `IN-TYPE` / `UID` / `SUB-RULE` / `MATCH` / `FINAL`。`MATCH`、`FINAL` 写成 `MATCH,策略组` 两段式，其余类型必须是 `类型,匹配内容,策略[,no-resolve]`。
 
@@ -47,6 +56,7 @@ python merge_override.py --allow-policy My-Node-01 --allow-policy My-Node-02
 python merge_override.py --skip-policy-check
 python merge_override.py --auto-select-max 40
 python merge_override.py --expect-sha256 96dd4374113a4df2d4e90ad1de5b17964581de1d6c41177faee8b13da6fc8215
+python merge_override.py --other-group-type select
 ```
 
 - `--offline`：使用上次下载的 `.yanet_cache.js`，不访问网络
@@ -54,6 +64,7 @@ python merge_override.py --expect-sha256 96dd4374113a4df2d4e90ad1de5b17964581de1
 - `--skip-policy-check`：跳过策略名校验（策略名唯一性 + 规则目标存在性）
 - `--auto-select-max`：覆盖 YAML 的 `auto_select_max`，CLI 优先
 - `--expect-sha256`：追加期望的上游 sha256，可重复，与 YAML 里的列表合并
+- `--other-group-type`：覆盖 YAML 的 `other_group_type`（`url-test` / `select`）
 
 构建期校验清单：
 
@@ -78,7 +89,7 @@ https://fastly.jsdelivr.net/gh/cdlongbow/clash-override@main/my_merged_override.
 1. 依次尝试多个 CDN / GitHub 源拉取最新 YaNet 优化脚本，全部失败时回退本地缓存
 2. 读取 `custom_rules.yaml`，先做规则语法校验（类型白名单、字段完整性、YAML 合法性）
 3. 在 `if (!enable) return config` 后一次性 `rules.unshift(...)` 注入，自定义规则优先级最高
-4. 自动注入「自动选择」和「故障转移」全局策略组，前者按地区轮转取样并受节点数上限约束
+4. 剔除 direct/reject 类与 `直连|xxx` 形式的入口条目，再注入「自动选择」「故障转移」全局策略组；「其他节点」默认改为 url-test
 5. 用产物里静态出现的策略组名校验所有自定义规则的目标策略，缺失即报错
 6. 校验产物策略名唯一，重名会让 Clash 整体拒载
 7. 任一锚点替换失败会直接报错，避免生成半残脚本
@@ -94,7 +105,9 @@ https://fastly.jsdelivr.net/gh/cdlongbow/clash-override@main/my_merged_override.
 | 自动选择 | url-test | 从可用节点里自动选延迟最低的，已排除高倍率与中国节点；节点数按地区轮转取样，上限由 `auto_select_max` 控制 |
 | 故障转移 | select | 手动选一个地区，内部 fallback 只在同地区节点间切换，挂了才切下一个 |
 
-故障转移会为每个有 ≥2 个节点的地区生成子组（如 故障转移-JP日本、故障转移-US美国），确保不跨地区跳。子组写入独立数组后再合并，避免遍历时重复生成。
+「其他节点」收的是没命中任何地区正则的剩余节点，成员同样经过剔除；类型默认 url-test（`other_group_type` 可设回 select）。
+
+故障转移会为每个有 ≥2 个成员的分组生成子组（如 故障转移-JP日本、故障转移-US美国、故障转移-其他节点），确保不跨地区跳。子组写入独立数组后再合并，避免遍历时重复生成。
 
 ## 文件说明
 

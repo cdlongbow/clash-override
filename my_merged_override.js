@@ -786,8 +786,36 @@ function main(config) {
   for (let i = 0; i < otherProxies.length; i++) {
     allProxyNames.push(otherProxies[i])
   }
+
+  const dropProxyTypes = ["direct", "reject", "reject-drop", "pass", "compatible"]
+  const dropNameTokens = ["直连", "拒绝", "放行", "屏蔽", "拦截", "direct", "reject", "pass", "compatible"]
+  const excludedProxyNames = {}
+  const markExcluded = (name) => {
+    if (typeof name === 'string' && name.length > 0) {
+      excludedProxyNames[name] = true
+    }
+  }
+  for (let i = 0; i < proxies.length; i++) {
+    const item = proxies[i]
+    const name = item && typeof item.name === 'string' ? item.name : ''
+    if (!name) {
+      continue
+    }
+    const type = item && typeof item.type === 'string' ? item.type.toLowerCase() : ''
+    if (dropProxyTypes.indexOf(type) >= 0) {
+      markExcluded(name)
+    }
+    const firstToken = name.trim().toLowerCase().split(/[|\/\-_.,:]+/)[0]
+    for (let d = 0; d < dropNameTokens.length; d++) {
+      if (firstToken === dropNameTokens[d]) {
+        markExcluded(name)
+      }
+    }
+  }
+
   const usableProxyNames = allProxyNames.filter(
     (n) =>
+      !excludedProxyNames[n] &&
       n !== '直连' &&
       n !== '拒绝' &&
       !n.includes('中国') &&
@@ -795,6 +823,8 @@ function main(config) {
       !n.includes('China') &&
       !n.includes('未知')
   )
+
+  const otherNodeNames = otherProxies.filter((n) => !excludedProxyNames[n])
 
   const generatedRegionGroups = []
   regionDefinitions.forEach((r) => {
@@ -813,12 +843,13 @@ function main(config) {
 
   const regionGroupNames = generatedRegionGroups.map((g) => g.name).sort()
 
-  if (otherProxies.length > 0) {
+  if (otherNodeNames.length > 0) {
     generatedRegionGroups.push({
       ...groupBaseOption,
       name: '其他节点',
-      type: 'select',
-      proxies: otherProxies,
+      type: 'url-test',
+      tolerance: 50,
+      proxies: otherNodeNames,
       icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/World_Map.png',
     })
   }
@@ -885,7 +916,7 @@ function main(config) {
   const fallbackGroups = []
   const fallbackGroupNames = []
   generatedRegionGroups.forEach((g) => {
-    if (g.name !== '其他节点' && Array.isArray(g.proxies) && g.proxies.length > 1) {
+    if (Array.isArray(g.proxies) && g.proxies.length > 1) {
       const fbName = '故障转移-' + g.name
       fallbackGroupNames.push(fbName)
       fallbackGroups.push({
@@ -917,7 +948,7 @@ function main(config) {
     ...groupBaseOption,
     name: '默认节点',
     type: 'select',
-    proxies: ['自动选择', ...(fallbackGroupNames.length > 0 ? ['故障转移'] : []), ...regionGroupNames, '其他节点', '直连'].filter((n) => n !== '其他节点' || otherProxies.length > 0),
+    proxies: ['自动选择', ...(fallbackGroupNames.length > 0 ? ['故障转移'] : []), ...regionGroupNames, '其他节点', '直连'].filter((n) => n !== '其他节点' || otherNodeNames.length > 0),
     icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Proxy.png',
   })
 

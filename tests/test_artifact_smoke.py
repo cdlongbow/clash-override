@@ -78,3 +78,17 @@ def test_artifact_groups_are_unique_and_capped(artifact_summary: dict):
     failover_subs = [name for name in names if name.startswith(mo.FAILOVER_PREFIX)]
     assert len(failover_subs) >= 2
     assert len([g for g in groups if g["type"] == "fallback"]) == len(failover_subs)
+
+
+def test_artifact_other_group_is_urls_test_and_cleaned(artifact_summary: dict):
+    source = ARTIFACT.read_text(encoding="utf-8")
+    assert "proxies: otherNodeNames," in source
+    assert "proxies: otherProxies," not in source
+    assert "const otherNodeNames =" in source
+    assert "const excludedProxyNames = {}" in source
+    groups = artifact_summary["groups"]
+    by_name = {g["name"]: g for g in groups}
+    failover_subs = [n for n in by_name if n.startswith(mo.FAILOVER_PREFIX)]
+    assert len(failover_subs) == len([g for g in groups if g["type"] == "fallback"])
+    url_tests = [n for n, g in by_name.items() if g["type"] == "url-test"]
+    assert len(url_tests) >= 2

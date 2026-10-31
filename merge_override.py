@@ -64,6 +64,28 @@ FAILOVER_PREFIX = "故障转移-"
 SCRIPT_MARKER = "function main(config)"
 CACHE_WARN_DAYS = 7
 SHA256_PATTERN = re.compile(r"[0-9a-fA-F]{64}")
+DEFAULT_DROP_PROXY_TYPES = ('direct', 'reject', 'reject-drop', 'pass', 'compatible')
+DEFAULT_DROP_NAME_TOKENS = (
+    '\u76f4\u8fde',
+    '\u62d2\u7edd',
+    '\u653e\u884c',
+    '\u5c4f\u853d',
+    '\u62e6\u622a',
+    'direct',
+    'reject',
+    'pass',
+    'compatible',
+)
+OTHER_GROUP_TYPES = ('url-test', 'select')
+OTHER_GROUP_OLD = "      type: 'select',\n      proxies: otherProxies,"
+OTHER_GROUP_URL_TEST_NEW = (
+    "      type: 'url-test',\n      tolerance: 50,\n      proxies: otherNodeNames,"
+)
+OTHER_GROUP_SELECT_NEW = "      type: 'select',\n      proxies: otherNodeNames,"
+OTHER_PROXIES_GUARD_OLD = 'otherProxies.length > 0'
+OTHER_PROXIES_GUARD_NEW = 'otherNodeNames.length > 0'
+OTHER_PROXIES_GUARD_COUNT = 2
+
 POLICY_NAME_PATTERN = re.compile(r"""name:\s*'([^']+)'|name:\s*"([^"]+)\"""")
 
 
@@ -85,8 +107,36 @@ ALL_PROXY_NAMES_NEW = """  const allProxyNames = []
   for (let i = 0; i < otherProxies.length; i++) {
     allProxyNames.push(otherProxies[i])
   }
+
+  const dropProxyTypes = @@DROP_TYPES@@
+  const dropNameTokens = @@DROP_TOKENS@@
+  const excludedProxyNames = {}
+  const markExcluded = (name) => {
+    if (typeof name === 'string' && name.length > 0) {
+      excludedProxyNames[name] = true
+    }
+  }
+  for (let i = 0; i < proxies.length; i++) {
+    const item = proxies[i]
+    const name = item && typeof item.name === 'string' ? item.name : ''
+    if (!name) {
+      continue
+    }
+    const type = item && typeof item.type === 'string' ? item.type.toLowerCase() : ''
+    if (dropProxyTypes.indexOf(type) >= 0) {
+      markExcluded(name)
+    }
+    const firstToken = name.trim().toLowerCase().split(/[|\/\-_.,:]+/)[0]
+    for (let d = 0; d < dropNameTokens.length; d++) {
+      if (firstToken === dropNameTokens[d]) {
+        markExcluded(name)
+      }
+    }
+  }
+
   const usableProxyNames = allProxyNames.filter(
     (n) =>
+      !excludedProxyNames[n] &&
       n !== '直连' &&
       n !== '拒绝' &&
       !n.includes('中国') &&
@@ -94,6 +144,8 @@ ALL_PROXY_NAMES_NEW = """  const allProxyNames = []
       !n.includes('China') &&
       !n.includes('未知')
   )
+
+  const otherNodeNames = otherProxies.filter((n) => !excludedProxyNames[n])
 
   const generatedRegionGroups = []"""
 
@@ -112,7 +164,7 @@ FUNCTIONAL_GROUPS_NEW = """  const functionalGroups = []
   const fallbackGroups = []
   const fallbackGroupNames = []
   generatedRegionGroups.forEach((g) => {
-    if (g.name !== '其他节点' && Array.isArray(g.proxies) && g.proxies.length > 1) {
+    if (Array.isArray(g.proxies) && g.proxies.length > 1) {
       const fbName = '故障转移-' + g.name
       fallbackGroupNames.push(fbName)
       fallbackGroups.push({
@@ -189,10 +241,18 @@ AUTO_SELECT_LIMIT_JS = """  const autoSelectMax = @@AUTO_MAX@@
 """
 
 
-def render_functional_groups_js(auto_select_max: int) -> str:
+def render_all_proxy_names_js(options: MergeOptions) -> str:
+    """把要剔除的代理类型与名称前缀渲染进排除表构造逻辑。"""
+    return (
+        ALL_PROXY_NAMES_NEW.replace("@@DROP_TYPES@@", json.dumps(list(options.drop_proxy_types)))
+        .replace("@@DROP_TOKENS@@", json.dumps(list(options.drop_name_tokens), ensure_ascii=False))
+    )
+
+
+def render_functional_groups_js(options: MergeOptions) -> str:
     """把节点数上限渲染进「自动选择」组的取样逻辑，0 表示不设上限。"""
-    head, sep, tail = FUNCTIONAL_GROUPS_NEW.partition("\n")
-    limited = AUTO_SELECT_LIMIT_JS.replace("@@AUTO_MAX@@", str(auto_select_max))
+    head, _, tail = FUNCTIONAL_GROUPS_NEW.partition("\n")
+    limited = AUTO_SELECT_LIMIT_JS.replace("@@AUTO_MAX@@", str(options.auto_select_max))
     return head + "\n" + limited + "\n" + tail
 
 
@@ -220,6 +280,16 @@ class RuleConfig(NamedTuple):
     allowed_policies: frozenset[str]
     auto_select_max: int | None
     expected_sha256: frozenset[str]
+    other_group_type: str | None
+    drop_proxy_types: tuple[str, ...] | None
+    drop_name_tokens: tuple[str, ...] | None
+
+
+class MergeOptions(NamedTuple):
+    auto_select_max: int = DEFAULT_AUTO_SELECT_MAX
+    other_group_type: str = "url-test"
+    drop_proxy_types: tuple[str, ...] = DEFAULT_DROP_PROXY_TYPES
+    drop_name_tokens: tuple[str, ...] = DEFAULT_DROP_NAME_TOKENS
 
 
 def read_rules_yaml(path: Path) -> dict:
@@ -315,6 +385,30 @@ def parse_expected_sha256(data: dict, path: Path) -> frozenset[str]:
     return frozenset(normalize_sha256(raw, f"{path} 的 expected_sha256"))
 
 
+def parse_drop_list(data: dict, field: str, path: Path) -> tuple[str, ...] | None:
+    raw = data.get(field)
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw:
+        raise MergeError(f"{path} 的 {field} 必须是非空字符串列表")
+    cleaned: list[str] = []
+    for index, item in enumerate(raw, start=1):
+        if not isinstance(item, str) or not item.strip():
+            raise MergeError(f"{path} 的 {field} 第 {index} 项必须是非空字符串")
+        cleaned.append(item.strip().lower())
+    return tuple(dict.fromkeys(cleaned))
+
+
+def parse_other_group_type(data: dict, path: Path) -> str | None:
+    raw = data.get("other_group_type")
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or raw.strip() not in OTHER_GROUP_TYPES:
+        choices = " / ".join(OTHER_GROUP_TYPES)
+        raise MergeError(f"{path} 的 other_group_type 只能是 {choices}: {raw}")
+    return raw.strip()
+
+
 def load_rule_config(path: Path) -> RuleConfig:
     data = read_rules_yaml(path)
     return RuleConfig(
@@ -322,6 +416,28 @@ def load_rule_config(path: Path) -> RuleConfig:
         parse_allowed_policies(data, path),
         parse_auto_select_max(data, path),
         parse_expected_sha256(data, path),
+        parse_other_group_type(data, path),
+        parse_drop_list(data, "drop_proxy_types", path),
+        parse_drop_list(data, "drop_name_tokens", path),
+    )
+
+
+def build_merge_options(args: argparse.Namespace, config: RuleConfig) -> MergeOptions:
+    auto_select_max = (
+        args.auto_select_max
+        if args.auto_select_max is not None
+        else (config.auto_select_max if config.auto_select_max is not None else DEFAULT_AUTO_SELECT_MAX)
+    )
+    if auto_select_max < 0:
+        raise MergeError("自动选择组节点上限不能是负数")
+    other_group_type = args.other_group_type or config.other_group_type or "url-test"
+    if other_group_type not in OTHER_GROUP_TYPES:
+        raise MergeError(f"--other-group-type 只能是 {' / '.join(OTHER_GROUP_TYPES)}")
+    return MergeOptions(
+        auto_select_max=auto_select_max,
+        other_group_type=other_group_type,
+        drop_proxy_types=config.drop_proxy_types or DEFAULT_DROP_PROXY_TYPES,
+        drop_name_tokens=config.drop_name_tokens or DEFAULT_DROP_NAME_TOKENS,
     )
 
 
@@ -399,6 +515,17 @@ def replace_once(haystack: str, old: str, new: str, label: str) -> str:
     if count != 1:
         raise MergeError(f"替换失败 [{label}]: 期望出现 1 次，实际 {count} 次。远程脚本格式可能已变")
     return haystack.replace(old, new, 1)
+
+
+def replace_exact(
+    haystack: str, old: str, new: str, expected: int, label: str
+) -> str:
+    count = haystack.count(old)
+    if count != expected:
+        raise MergeError(
+            f"替换失败 [{label}]: 期望出现 {expected} 次，实际 {count} 次。远程脚本格式可能已变"
+        )
+    return haystack.replace(old, new)
 
 
 class RemoteScript(NamedTuple):
@@ -483,24 +610,40 @@ def download_remote(
 def merge_script(
     remote_code: str,
     rules: list[str],
-    auto_select_max: int = DEFAULT_AUTO_SELECT_MAX,
+    options: MergeOptions | None = None,
 ) -> str:
+    opts = options or MergeOptions()
     match = ENABLE_PATTERN.search(remote_code)
     if not match:
         raise MergeError("未找到 'if (!enable) return config' 语句，脚本格式可能已变")
 
     combined = remote_code[: match.end()] + build_custom_rules_js(rules) + remote_code[match.end() :]
-    combined = replace_once(combined, ALL_PROXY_NAMES_OLD, ALL_PROXY_NAMES_NEW, "allProxyNames")
+    combined = replace_once(
+        combined, ALL_PROXY_NAMES_OLD, render_all_proxy_names_js(opts), "allProxyNames"
+    )
     combined = replace_once(
         combined,
         FUNCTIONAL_GROUPS_OLD,
-        render_functional_groups_js(auto_select_max),
+        render_functional_groups_js(opts),
         "functionalGroups",
     )
     combined = replace_once(combined, DEFAULT_NODE_OLD, DEFAULT_NODE_NEW, "默认节点 proxies")
     combined = replace_once(combined, GROUP_PROXIES_DEFAULT_OLD, GROUP_PROXIES_DEFAULT_NEW, "服务组 proxies")
     combined = replace_once(combined, GROUP_PROXIES_MEDIA_OLD, GROUP_PROXIES_MEDIA_NEW, "港澳台媒体 proxies")
     combined = replace_once(combined, OTHER_NET_OLD, OTHER_NET_NEW, "其他外网 proxies")
+    other_group_new = (
+        OTHER_GROUP_URL_TEST_NEW
+        if opts.other_group_type == "url-test"
+        else OTHER_GROUP_SELECT_NEW
+    )
+    combined = replace_once(combined, OTHER_GROUP_OLD, other_group_new, "其他节点 group")
+    combined = replace_exact(
+        combined,
+        OTHER_PROXIES_GUARD_OLD,
+        OTHER_PROXIES_GUARD_NEW,
+        OTHER_PROXIES_GUARD_COUNT,
+        "其他节点 判空守卫",
+    )
     return combined
 
 
@@ -539,6 +682,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"自动选择组的节点数上限，0 表示不限，默认 {DEFAULT_AUTO_SELECT_MAX}",
     )
     parser.add_argument(
+        "--other-group-type",
+        choices=OTHER_GROUP_TYPES,
+        default=None,
+        help="其他节点组类型，默认 url-test（自动测速），可设回 select 手动选",
+    )
+    parser.add_argument(
         "--expect-sha256",
         action="append",
         default=[],
@@ -568,13 +717,7 @@ def main(argv: list[str] | None = None) -> int:
         config = load_rule_config(args.rules)
         rules = config.rules
         print(f"已加载 {len(rules)} 条自定义规则: {args.rules}")
-        auto_select_max = args.auto_select_max
-        if auto_select_max is None:
-            auto_select_max = config.auto_select_max
-            if auto_select_max is None:
-                auto_select_max = DEFAULT_AUTO_SELECT_MAX
-        if auto_select_max < 0:
-            raise MergeError("自动选择组节点上限不能是负数")
+        options = build_merge_options(args, config)
         cli_hashes = normalize_sha256(args.expect_sha256, "--expect-sha256")
         pinned = cli_hashes | set(config.expected_sha256)
         if args.offline:
@@ -584,7 +727,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             script = download_remote(REMOTE_URLS, args.cache, expected_sha256=pinned)
         print(f"上游脚本: {script.source}，sha256 {script.sha256}，长度 {len(script.text)}")
-        combined = merge_script(script.text, rules, auto_select_max)
+        combined = merge_script(script.text, rules, options)
         if args.skip_policy_check:
             print("已跳过产物策略名校验")
         else:
@@ -593,10 +736,10 @@ def main(argv: list[str] | None = None) -> int:
             assert_unique_policy_names(combined)
             print("规则目标与策略名唯一性校验通过")
         write_output(args.output, combined)
-        limit = f"{auto_select_max}" if auto_select_max > 0 else "不限"
+        limit = f"{options.auto_select_max}" if options.auto_select_max > 0 else "不限"
         print(
             f"合并完成，已保存到: {args.output}，产物 sha256 {sha256_of(combined)}，"
-            f"自动选择节点上限 {limit}"
+            f"自动选择节点上限 {limit}，其他节点组类型 {options.other_group_type}"
         )
         return 0
     except MergeError as exc:
