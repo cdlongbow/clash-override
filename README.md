@@ -14,7 +14,20 @@ rules:
   - DOMAIN-SUFFIX,api.example.org,US美国
   - DOMAIN-KEYWORD,dmm,JP日本
   - IP-CIDR,15.204.105.50/32,自动选择,no-resolve
+
+# 目标策略指向订阅里的节点名时，在这里登记，供构建期校验放行
+allowed_policies:
+  - My-Node-01
+
+# 可选：自动选择组的节点数上限（0 表示不限），默认 80
+auto_select_max: 80
+
+# 可选：锁定上游脚本 sha256，全部源都不匹配时报错，防上游被替换后无感生效
+expected_sha256:
+  - 96dd4374113a4df2d4e90ad1de5b17964581de1d6c41177faee8b13da6fc8215
 ```
+
+规则类型有白名单校验：`DOMAIN` / `DOMAIN-SUFFIX` / `DOMAIN-KEYWORD` / `DOMAIN-REGEX` / `GEOSITE` / `GEOIP` / `IP-CIDR` / `IP-CIDR6` / `SRC-IP-CIDR` / `IP-SUFFIX` / `DST-PORT` / `SRC-PORT` / `PROCESS` / `PROCESS-NAME` / `RULE-SET` / `NETWORK` / `IN-TYPE` / `UID` / `SUB-RULE` / `MATCH` / `FINAL`。`MATCH`、`FINAL` 写成 `MATCH,策略组` 两段式，其余类型必须是 `类型,匹配内容,策略[,no-resolve]`。
 
 ### 2. 生成覆盖脚本
 
@@ -23,16 +36,34 @@ pip install -r requirements.txt
 python merge_override.py
 ```
 
-运行后会在当前目录生成 `my_merged_override.js`。
+运行后会生成 `my_merged_override.js`（默认落在脚本所在目录；`--rules`/`--output`/`--cache` 传相对路径时按当前工作目录解析）。
 
 常用参数：
 
 ```bash
 python merge_override.py --rules custom_rules.yaml --output my_merged_override.js
 python merge_override.py --offline
+python merge_override.py --allow-policy My-Node-01 --allow-policy My-Node-02
+python merge_override.py --skip-policy-check
+python merge_override.py --auto-select-max 40
+python merge_override.py --expect-sha256 96dd4374113a4df2d4e90ad1de5b17964581de1d6c41177faee8b13da6fc8215
 ```
 
-`--offline` 使用上次下载的 `.yanet_cache.js`，不访问网络。
+- `--offline`：使用上次下载的 `.yanet_cache.js`，不访问网络
+- `--allow-policy`：临时放行额外的目标策略名（等价于 YAML 里的 `allowed_policies`），可重复
+- `--skip-policy-check`：跳过策略名校验（策略名唯一性 + 规则目标存在性）
+- `--auto-select-max`：覆盖 YAML 的 `auto_select_max`，CLI 优先
+- `--expect-sha256`：追加期望的上游 sha256，可重复，与 YAML 里的列表合并
+
+构建期校验清单：
+
+1. YAML 合法性、规则类型白名单与字段完整性
+2. 每条规则的目标策略在生成脚本里真实存在（策略名从产物静态提取，含派生的 `故障转移-<地区>`）
+3. 产物里策略名全局唯一（重名会让 Clash 拒载）
+4. 上游来源可信：打印 sha256，可用 `expected_sha256` 锁定；缓存回退时提示缓存年龄
+5. CI 侧再跑 `node --check` 与产物冒烟（合成节点跑一遍 `main()`）
+
+「自动选择」组按地区轮转取样，最多 `auto_select_max` 个节点，避免节点多的订阅把 url-test 探测拉爆；要全量节点就设 0。
 
 ### 3. 导入 Clash 客户端
 
@@ -45,10 +76,14 @@ https://fastly.jsdelivr.net/gh/cdlongbow/clash-override@main/my_merged_override.
 ## 工作原理
 
 1. 依次尝试多个 CDN / GitHub 源拉取最新 YaNet 优化脚本，全部失败时回退本地缓存
-2. 读取 `custom_rules.yaml`，在 `if (!enable) return config` 后一次性 `rules.unshift(...)` 注入
-3. 自定义规则优先级最高
-4. 自动注入「自动选择」和「故障转移」全局策略组
-5. 任一锚点替换失败会直接报错，避免生成半残脚本
+2. 读取 `custom_rules.yaml`，先做规则语法校验（类型白名单、字段完整性、YAML 合法性）
+3. 在 `if (!enable) return config` 后一次性 `rules.unshift(...)` 注入，自定义规则优先级最高
+4. 自动注入「自动选择」和「故障转移」全局策略组，前者按地区轮转取样并受节点数上限约束
+5. 用产物里静态出现的策略组名校验所有自定义规则的目标策略，缺失即报错
+6. 校验产物策略名唯一，重名会让 Clash 整体拒载
+7. 任一锚点替换失败会直接报错，避免生成半残脚本
+
+策略组存在性校验基于静态文本提取（脚本里出现的 `name: '...'` 字面量，外加内建的 `DIRECT` / `REJECT` / `PASS` / `GLOBAL`，以及派生的 `故障转移-<地区>` 名）。上游若改成运行时拼接的组名，可能出现误报，这类情况用 `allowed_policies` 放行即可。
 
 ## 生成策略组
 
@@ -56,7 +91,7 @@ https://fastly.jsdelivr.net/gh/cdlongbow/clash-override@main/my_merged_override.
 
 | 策略组 | 类型 | 说明 |
 |--------|------|------|
-| 自动选择 | url-test | 从已分类的可用节点中自动选延迟最低的，已排除高倍率和中国节点 |
+| 自动选择 | url-test | 从可用节点里自动选延迟最低的，已排除高倍率与中国节点；节点数按地区轮转取样，上限由 `auto_select_max` 控制 |
 | 故障转移 | select | 手动选一个地区，内部 fallback 只在同地区节点间切换，挂了才切下一个 |
 
 故障转移会为每个有 ≥2 个节点的地区生成子组（如 故障转移-JP日本、故障转移-US美国），确保不跨地区跳。子组写入独立数组后再合并，避免遍历时重复生成。
@@ -69,7 +104,8 @@ https://fastly.jsdelivr.net/gh/cdlongbow/clash-override@main/my_merged_override.
 | `merge_override.py` | 构建脚本，拉取远程脚本并注入自定义规则 |
 | `my_merged_override.js` | 合并后的覆盖脚本（产物），可在 Clash 中直接使用 |
 | `requirements.txt` | Python 依赖 |
-| `tests/` | 合并逻辑单测 |
+| `tests/` | 合并逻辑单测 + 产物冒烟测试（需要 node，缺失时自动跳过） |
+| `THIRD_PARTY_NOTICE.md` | 上游 YaNet 脚本的 BSD 3-Clause 许可与署名 |
 
 ## 自定义规则示例
 
@@ -89,3 +125,16 @@ rules:
 pip install -r requirements.txt pytest
 python -m pytest -q
 ```
+
+`tests/test_artifact_smoke.py` 会用 node 加载已提交的 `my_merged_override.js`，喂合成节点跑一遍 `main()`，校验自定义规则排在最前、策略名唯一、自动选择节点数不越界；本机或 Runner 没有 node 时该用例自动跳过。
+
+本地手动冒烟：
+
+```bash
+python merge_override.py --offline
+node --check my_merged_override.js
+```
+
+## 许可
+
+构建产物是上游 [YaNet](https://github.com/dahaha-365/YaNet) 的修改衍生作品，上游为 BSD 3-Clause（Copyright (c) 2024, Dahaha）。版权声明与免责条款见 `THIRD_PARTY_NOTICE.md`，生成脚本文件头保留原作者署名与仓库地址。

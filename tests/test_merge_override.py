@@ -1,3 +1,6 @@
+import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -84,7 +87,8 @@ def test_merge_script_injects_groups_and_rules():
     assert 'rules.unshift(\n    "DOMAIN-SUFFIX,example.com,DIRECT"\n  )' in out
     assert "const usableProxyNames = allProxyNames.filter" in out
     assert "name: '自动选择'" in out
-    assert "usableProxyNames.length > 0 ? usableProxyNames : ['直连']" in out
+    assert "autoSelectProxies.length > 0 ? autoSelectProxies" in out
+    assert "const autoSelectMax = 80" in out
     assert "fallbackGroups.push" in out
     assert "generatedRegionGroups.push(fallbackGroups[i])" in out
     assert "...(fallbackGroupNames.length > 0 ? ['故障转移'] : [])" in out
@@ -112,8 +116,10 @@ def test_download_uses_cache_when_all_urls_fail(tmp_path: Path, monkeypatch):
         raise RuntimeError("offline")
 
     monkeypatch.setattr(mo.requests, "get", boom)
-    text = mo.download_remote(["https://example.invalid/script.js"], cache)
-    assert text == "function main(config) {}"
+    script = mo.download_remote(["https://example.invalid/script.js"], cache)
+    assert script.text == "function main(config) {}"
+    assert script.from_cache is True
+    assert script.source == str(cache)
 
 
 def test_download_rejects_non_script(monkeypatch, tmp_path: Path):
@@ -127,3 +133,372 @@ def test_download_rejects_non_script(monkeypatch, tmp_path: Path):
     cache = tmp_path / "cache.js"
     with pytest.raises(mo.MergeError, match="下载远程脚本失败"):
         mo.download_remote(["https://example.invalid/script.js"], cache)
+
+
+RULE_OK = "DOMAIN-SUFFIX,a.com,DIRECT"
+
+
+def write_yaml(tmp_path: Path, text: str) -> Path:
+    path = tmp_path / "rules.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_load_rules_rejects_unknown_type(tmp_path: Path):
+    path = write_yaml(tmp_path, "rules:\n  - " + RULE_OK.replace("DOMAIN", "FOO-TYPE") + "\n")
+    with pytest.raises(mo.MergeError, match="类型无效"):
+        mo.load_rules(path)
+
+
+def test_load_rules_accepts_lowercase_type(tmp_path: Path):
+    path = write_yaml(tmp_path, "rules:\n  - domain-suffix,a.com,DIRECT\n")
+    assert mo.load_rules(path) == ["domain-suffix,a.com,DIRECT"]
+
+
+def test_load_rules_rejects_missing_target(tmp_path: Path):
+    path = write_yaml(tmp_path, "rules:\n  - DOMAIN-SUFFIX,a.com\n")
+    with pytest.raises(mo.MergeError, match="格式无效"):
+        mo.load_rules(path)
+
+
+def test_load_rules_rejects_empty_fields(tmp_path: Path):
+    path = write_yaml(tmp_path, "rules:\n  - DOMAIN-SUFFIX,,DIRECT\n")
+    with pytest.raises(mo.MergeError, match="匹配内容为空"):
+        mo.load_rules(path)
+    path = write_yaml(tmp_path, "rules:\n  - DOMAIN-SUFFIX,a.com,\n")
+    with pytest.raises(mo.MergeError, match="策略为空"):
+        mo.load_rules(path)
+
+
+def test_load_rules_accepts_match_without_payload(tmp_path: Path):
+    path = write_yaml(tmp_path, "rules:\n  - MATCH,其他外网\n")
+    assert mo.load_rules(path) == ["MATCH,其他外网"]
+
+
+def test_load_rules_rejects_match_without_target(tmp_path: Path):
+    path = write_yaml(tmp_path, "rules:\n  - MATCH,\n")
+    with pytest.raises(mo.MergeError, match="策略为空"):
+        mo.load_rules(path)
+
+
+def test_load_rules_reports_yaml_error(tmp_path: Path):
+    path = write_yaml(tmp_path, "rules: [unclosed\n")
+    with pytest.raises(mo.MergeError, match="不是合法 YAML"):
+        mo.load_rules(path)
+
+
+def test_load_rules_rejects_non_mapping_document(tmp_path: Path):
+    path = write_yaml(tmp_path, "- DOMAIN-SUFFIX,a.com,DIRECT\n")
+    with pytest.raises(mo.MergeError, match="顶层必须是键值映射"):
+        mo.load_rules(path)
+
+
+def test_load_rule_config_reads_allowed_policies(tmp_path: Path):
+    path = write_yaml(
+        tmp_path,
+        "rules:\n  - DOMAIN-SUFFIX,a.com,My-Node\nallowed_policies:\n  - My-Node\n",
+    )
+    config = mo.load_rule_config(path)
+    assert config.rules == ["DOMAIN-SUFFIX,a.com,My-Node"]
+    assert config.allowed_policies == frozenset({"My-Node"})
+
+
+def test_load_rule_config_rejects_bad_allowed_policies(tmp_path: Path):
+    text = "rules:\n  - " + RULE_OK + "\nallowed_policies:\n  a: 1\n"
+    path = write_yaml(tmp_path, text)
+    with pytest.raises(mo.MergeError, match="allowed_policies 必须是字符串列表"):
+        mo.load_rule_config(path)
+
+
+def test_rule_target_position_depends_on_type():
+    assert mo.rule_target("IP-CIDR,1.2.3.4/32,自动选择,no-resolve") == "自动选择"
+    assert mo.rule_target("MATCH,其他外网") == "其他外网"
+
+
+def test_validate_rule_targets_accepts_script_policies():
+    merged = mo.merge_script(FIXTURE, ["DOMAIN-SUFFIX,a.com,默认节点"])
+    mo.validate_rule_targets(
+        merged,
+        [
+            "DOMAIN-SUFFIX,a.com,默认节点",
+            "DOMAIN-SUFFIX,b.com,自动选择",
+            "DOMAIN-SUFFIX,c.com,故障转移-默认节点",
+            "DOMAIN-SUFFIX,d.com,DIRECT",
+            "IP-CIDR,1.1.1.1/32,其他外网,no-resolve",
+        ],
+        set(),
+    )
+
+
+def test_validate_rule_targets_rejects_unknown_policy():
+    merged = mo.merge_script(FIXTURE, [])
+    with pytest.raises(mo.MergeError, match="US美国"):
+        mo.validate_rule_targets(merged, ["DOMAIN-SUFFIX,a.com,US美国"], set())
+
+
+def test_validate_rule_targets_reports_every_missing_policy_once():
+    merged = mo.merge_script(FIXTURE, [])
+    with pytest.raises(mo.MergeError, match="未知策略") as exc:
+        mo.validate_rule_targets(
+            merged,
+            [
+                "DOMAIN-SUFFIX,a.com,不存在A",
+                "DOMAIN-SUFFIX,b.com,不存在A",
+                "DOMAIN-SUFFIX,c.com,不存在B",
+            ],
+            set(),
+        )
+    message = str(exc.value)
+    assert message.count("不存在A") == 2
+    assert "不存在B" in message
+
+
+def test_validate_rule_targets_honours_extra_allowed():
+    merged = mo.merge_script(FIXTURE, [])
+    mo.validate_rule_targets(
+        merged,
+        ["DOMAIN-SUFFIX,a.com,My-Node"],
+        {"My-Node"},
+    )
+
+
+def run_offline_main(tmp_path: Path, rules_text: str, output: Path) -> int:
+    cache = tmp_path / "cache.js"
+    cache.write_text(FIXTURE, encoding="utf-8")
+    rules = write_yaml(tmp_path, rules_text)
+    return mo.main(
+        ["--offline", "--rules", str(rules), "--cache", str(cache), "--output", str(output)]
+    )
+
+
+def test_main_offline_writes_validated_output(tmp_path: Path):
+    output = tmp_path / "out.js"
+    code = run_offline_main(tmp_path, "rules:\n  - DOMAIN-SUFFIX,a.com,默认节点\n", output)
+    assert code == 0
+    text = output.read_text(encoding="utf-8")
+    assert "DOMAIN-SUFFIX,a.com,默认节点" in text
+    assert "name: '自动选择'" in text
+
+
+def test_main_fails_on_unknown_policy(tmp_path: Path):
+    output = tmp_path / "out.js"
+    code = run_offline_main(tmp_path, "rules:\n  - DOMAIN-SUFFIX,a.com,不存在的组\n", output)
+    assert code == 1
+    assert not output.exists()
+
+
+def test_main_allow_policy_flag(tmp_path: Path):
+    cache = tmp_path / "cache.js"
+    cache.write_text(FIXTURE, encoding="utf-8")
+    rules = write_yaml(tmp_path, "rules:\n  - DOMAIN-SUFFIX,a.com,My-Node\n")
+    output = tmp_path / "out.js"
+    code = mo.main(
+        [
+            "--offline",
+            "--rules",
+            str(rules),
+            "--cache",
+            str(cache),
+            "--output",
+            str(output),
+            "--allow-policy",
+            "My-Node",
+        ]
+    )
+    assert code == 0
+    assert output.exists()
+
+
+def test_main_skip_policy_check(tmp_path: Path):
+    cache = tmp_path / "cache.js"
+    cache.write_text(FIXTURE, encoding="utf-8")
+    rules = write_yaml(tmp_path, "rules:\n  - DOMAIN-SUFFIX,a.com,My-Node\n")
+    output = tmp_path / "out.js"
+    code = mo.main(
+        [
+            "--offline",
+            "--rules",
+            str(rules),
+            "--cache",
+            str(cache),
+            "--output",
+            str(output),
+            "--skip-policy-check",
+        ]
+    )
+    assert code == 0
+    assert output.exists()
+
+
+def test_main_reports_unwritable_output(tmp_path: Path):
+    output = tmp_path / "missing-dir" / "out.js"
+    code = run_offline_main(tmp_path, "rules:\n  - DOMAIN-SUFFIX,a.com,默认节点\n", output)
+    assert code == 1
+
+
+def test_main_reports_missing_rules_file(tmp_path: Path):
+    cache = tmp_path / "cache.js"
+    cache.write_text(FIXTURE, encoding="utf-8")
+    code = mo.main(
+        [
+            "--offline",
+            "--rules",
+            str(tmp_path / "nope.yaml"),
+            "--cache",
+            str(cache),
+            "--output",
+            str(tmp_path / "out.js"),
+        ]
+    )
+    assert code == 1
+
+
+class ScriptResp:
+    def __init__(self, text: str):
+        self.text = text
+
+    def raise_for_status(self) -> None:
+        return None
+
+
+SCRIPT_BODY = "function main(config) {\n  return config\n}\n"
+
+
+def test_build_custom_rules_js_handles_empty_rules():
+    assert "自定义优先规则：无" in mo.build_custom_rules_js([])
+
+
+def test_download_returns_digest_and_writes_cache(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(mo.requests, "get", lambda *_a, **_k: ScriptResp(SCRIPT_BODY))
+    cache = tmp_path / "cache.js"
+    script = mo.download_remote(["https://example.invalid/a.js"], cache)
+    assert script.sha256 == mo.sha256_of(SCRIPT_BODY)
+    assert script.from_cache is False
+    assert script.source == "https://example.invalid/a.js"
+    assert cache.read_text(encoding="utf-8") == SCRIPT_BODY
+
+
+def test_download_separates_content_failure(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(mo.requests, "get", lambda *_a, **_k: ScriptResp("nope"))
+    with pytest.raises(mo.MergeError, match="内容校验失败") as exc:
+        mo.download_remote(["https://example.invalid/a.js"], tmp_path / "cache.js")
+    assert "网络失败" not in str(exc.value)
+
+
+def test_download_accepts_pinned_sha256(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(mo.requests, "get", lambda *_a, **_k: ScriptResp(SCRIPT_BODY))
+    script = mo.download_remote(
+        ["https://example.invalid/a.js"],
+        tmp_path / "cache.js",
+        expected_sha256={mo.sha256_of(SCRIPT_BODY).upper()},
+    )
+    assert script.sha256 == mo.sha256_of(SCRIPT_BODY)
+
+
+def test_download_rejects_unpinned_sha256(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(mo.requests, "get", lambda *_a, **_k: ScriptResp(SCRIPT_BODY))
+    with pytest.raises(mo.MergeError, match="sha256") as exc:
+        mo.download_remote(
+            ["https://example.invalid/a.js"],
+            tmp_path / "cache.js",
+            expected_sha256={"0" * 64},
+        )
+    assert "内容校验失败" in str(exc.value)
+
+
+def test_cached_script_rejects_corrupted_cache(tmp_path: Path):
+    cache = tmp_path / "cache.js"
+    cache.write_text("console.log(1)\n", encoding="utf-8")
+    with pytest.raises(mo.MergeError, match="缓存文件缺少"):
+        mo.load_cached_script(cache, set())
+
+
+def test_cached_script_rejects_sha_mismatch(tmp_path: Path):
+    cache = tmp_path / "cache.js"
+    cache.write_text(SCRIPT_BODY, encoding="utf-8")
+    with pytest.raises(mo.MergeError, match="与期望值不符"):
+        mo.load_cached_script(cache, {"0" * 64})
+
+
+def test_load_rule_config_parses_new_keys(tmp_path: Path):
+    digest = "ab" * 32
+    text = (
+        "rules:\n  - " + RULE_OK + "\nauto_select_max: 30\nexpected_sha256:\n  - " + digest + "\n"
+    )
+    config = mo.load_rule_config(write_yaml(tmp_path, text))
+    assert config.auto_select_max == 30
+    assert config.expected_sha256 == frozenset({"ab" * 32})
+
+
+def test_load_rule_config_rejects_bad_auto_select_max(tmp_path: Path):
+    text = "rules:\n  - " + RULE_OK + "\nauto_select_max: -1\n"
+    with pytest.raises(mo.MergeError, match="auto_select_max"):
+        mo.load_rule_config(write_yaml(tmp_path, text))
+
+
+def test_load_rule_config_rejects_bad_expected_sha256(tmp_path: Path):
+    text = "rules:\n  - " + RULE_OK + "\nexpected_sha256:\n  - not-hex\n"
+    with pytest.raises(mo.MergeError, match="sha256（64 位十六进制）"):
+        mo.load_rule_config(write_yaml(tmp_path, text))
+
+
+def test_merge_script_renders_auto_select_limit():
+    limited = mo.merge_script(FIXTURE, [], 12)
+    assert "const autoSelectMax = 12" in limited
+    assert "const autoSelectMax = 80" not in limited
+
+
+def test_auto_select_sampling_is_bounded_and_balanced():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not available")
+    usable = (
+        [f"R1 node {i}" for i in range(1, 61)]
+        + [f"R2 node {i}" for i in range(1, 41)]
+        + ["Extra-1"]
+    )
+    js = (
+        "const groupBaseOption = {}\n"
+        "const regionGroups = { R1: { proxies: " + json.dumps(usable[:60], ensure_ascii=False)
+        + " }, R2: { proxies: " + json.dumps(usable[60:100], ensure_ascii=False) + " } }\n"
+        "const otherProxies = " + json.dumps(["Extra-1"]) + "\n"
+        + mo.ALL_PROXY_NAMES_NEW
+        + "\n"
+        + mo.render_functional_groups_js(20)
+        + "\nconsole.log(JSON.stringify(autoSelectProxies))\n"
+    )
+    raw = subprocess.run([node, "-e", js], capture_output=True, text=True, check=True).stdout
+    picked = json.loads(raw.strip().splitlines()[-1])
+    assert len(picked) == 20
+    r1 = [n for n in picked if n.startswith("R1")]
+    r2 = [n for n in picked if n.startswith("R2")]
+    assert len(r1) >= 8 and len(r2) >= 8 and "Extra-1" in picked
+
+
+def test_assert_unique_policy_names_rejects_duplicate():
+    script = "name: '默认节点',\nname: '默认节点',\nname: '其他外网',"
+    with pytest.raises(mo.MergeError, match="重复的策略名"):
+        mo.assert_unique_policy_names(script)
+    mo.assert_unique_policy_names("name: '默认节点',\nname: '其他外网',")
+
+
+def test_main_cli_auto_select_max_overrides_yaml(tmp_path: Path):
+    cache = tmp_path / "cache.js"
+    cache.write_text(FIXTURE, encoding="utf-8")
+    rules = write_yaml(tmp_path, "rules:\n  - " + RULE_OK + "\nauto_select_max: 30\n")
+    output = tmp_path / "out.js"
+    code = mo.main(
+        [
+            "--offline",
+            "--rules",
+            str(rules),
+            "--cache",
+            str(cache),
+            "--output",
+            str(output),
+            "--auto-select-max",
+            "0",
+        ]
+    )
+    assert code == 0
+    assert "const autoSelectMax = 0" in output.read_text(encoding="utf-8")

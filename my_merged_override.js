@@ -825,13 +825,60 @@ function main(config) {
 
   // 3.3 构建功能策略组
   const functionalGroups = []
+  const autoSelectMax = 80
+  const autoSelectProxies = (function () {
+    if (!(autoSelectMax > 0) || usableProxyNames.length <= autoSelectMax) {
+      return usableProxyNames
+    }
+    const groupKeys = Object.keys(regionGroups)
+    const ownerOf = {}
+    for (let k = 0; k < groupKeys.length; k++) {
+      const list = regionGroups[groupKeys[k]].proxies
+      for (let i = 0; i < list.length; i++) {
+        if (ownerOf[list[i]] === undefined) {
+          ownerOf[list[i]] = groupKeys[k]
+        }
+      }
+    }
+    const owners = []
+    const buckets = {}
+    for (let i = 0; i < usableProxyNames.length; i++) {
+      const name = usableProxyNames[i]
+      const owner = ownerOf[name] === undefined ? '_' : ownerOf[name]
+      if (!buckets[owner]) {
+        buckets[owner] = []
+        owners.push(owner)
+      }
+      buckets[owner].push(name)
+    }
+    const cursor = {}
+    const picked = []
+    let added = true
+    while (picked.length < autoSelectMax && added) {
+      added = false
+      for (let o = 0; o < owners.length; o++) {
+        const list = buckets[owners[o]]
+        const at = cursor[owners[o]] || 0
+        if (at < list.length) {
+          cursor[owners[o]] = at + 1
+          picked.push(list[at])
+          added = true
+          if (picked.length >= autoSelectMax) {
+            break
+          }
+        }
+      }
+    }
+    return picked.length > 0 ? picked : usableProxyNames.slice(0, autoSelectMax)
+  })()
+
 
   functionalGroups.push({
     ...groupBaseOption,
     name: '自动选择',
     type: 'url-test',
     tolerance: 50,
-    proxies: usableProxyNames.length > 0 ? usableProxyNames : ['直连'],
+    proxies: autoSelectProxies.length > 0 ? autoSelectProxies : ['直连'],
     icon: 'https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Available.png',
   })
 
