@@ -64,3 +64,9 @@ rules:
   - DOMAIN-SUFFIX,seesaa.jp,JP日本
   - DOMAIN-KEYWORD,mgstage,JP日本
   - DOMAIN-KEYWORD,dmm,JP日本
+
+# 锁定上游脚本内容：构建时核对 sha256，对不上直接失败，避免上游被替换后无感生效。
+# 上游正常更新导致构建报错时，跑下面命令拿新值，替换掉下面这串即可：
+#   python merge_override.py --print-hash
+expected_sha256:
+  - 96dd4374113a4df2d4e90ad1de5b17964581de1d6c41177faee8b13da6fc8215

@@ -562,3 +562,70 @@ def test_other_nodes_get_failover_group():
     merged = mo.merge_script(FIXTURE, [])
     assert "if (Array.isArray(g.proxies) && g.proxies.length > 1) {" in merged
     assert "otherProxies.length > 0" not in merged
+
+
+def test_main_print_hash_writes_nothing(tmp_path: Path, capsys):
+    cache = tmp_path / "cache.js"
+    cache.write_text(FIXTURE, encoding="utf-8")
+    rules = write_yaml(tmp_path, "rules:\n  - DOMAIN-SUFFIX,a.com,默认节点\n")
+    output = tmp_path / "out.js"
+    code = mo.main(
+        [
+            "--offline",
+            "--print-hash",
+            "--rules",
+            str(rules),
+            "--cache",
+            str(cache),
+            "--output",
+            str(output),
+        ]
+    )
+    assert code == 0
+    assert not output.exists()
+    printed = capsys.readouterr().out
+    assert mo.sha256_of(FIXTURE) in printed
+    assert "没有生成也没有改动任何文件" in printed
+
+
+def test_print_hash_ignores_existing_pin(tmp_path: Path):
+    cache = tmp_path / "cache.js"
+    cache.write_text(FIXTURE, encoding="utf-8")
+    rules = write_yaml(
+        tmp_path, "rules:\n  - DOMAIN-SUFFIX,a.com,默认节点\nexpected_sha256:\n  - '" + "0" * 64 + "'\n"
+    )
+    output = tmp_path / "out.js"
+    code = mo.main(
+        [
+            "--offline",
+            "--print-hash",
+            "--rules",
+            str(rules),
+            "--cache",
+            str(cache),
+            "--output",
+            str(output),
+        ]
+    )
+    assert code == 0
+    assert not output.exists()
+
+
+def test_pin_mismatch_hint_mentions_refresh(tmp_path: Path):
+    cache = tmp_path / "cache.js"
+    cache.write_text(SCRIPT_BODY, encoding="utf-8")
+    with pytest.raises(mo.MergeError) as exc:
+        mo.load_cached_script(cache, {"0" * 64})
+    assert "--print-hash" in str(exc.value)
+    assert "expected_sha256" in str(exc.value)
+
+
+def test_download_pin_mismatch_hint_mentions_refresh(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(mo.requests, "get", lambda *_a, **_k: ScriptResp(SCRIPT_BODY))
+    with pytest.raises(mo.MergeError) as exc:
+        mo.download_remote(
+            ["https://example.invalid/a.js"],
+            tmp_path / "cache.js",
+            expected_sha256={"0" * 64},
+        )
+    assert "--print-hash" in str(exc.value)

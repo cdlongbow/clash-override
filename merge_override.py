@@ -86,6 +86,11 @@ OTHER_PROXIES_GUARD_OLD = 'otherProxies.length > 0'
 OTHER_PROXIES_GUARD_NEW = 'otherNodeNames.length > 0'
 OTHER_PROXIES_GUARD_COUNT = 2
 
+PIN_REFRESH_HINT = (
+    '上游可能已更新。确认可信后运行 python merge_override.py --print-hash，'
+    "把打印出的 sha256 换进 custom_rules.yaml 的 expected_sha256"
+)
+
 POLICY_NAME_PATTERN = re.compile(r"""name:\s*'([^']+)'|name:\s*"([^"]+)\"""")
 
 
@@ -550,7 +555,9 @@ def load_cached_script(cache_path: Path, expected: set[str]) -> RemoteScript:
     digest = sha256_of(text)
     if expected and digest not in expected:
         raise MergeError(
-            f"缓存脚本 sha256 {digest} 与期望值不符: {' '.join(sorted(expected))}"
+            f"缓存脚本 sha256 {digest} 与期望值不符: "
+            f"{' '.join(sorted(expected))}"
+            + "\n" + PIN_REFRESH_HINT
         )
     age = cache_age_days(cache_path)
     if age > CACHE_WARN_DAYS:
@@ -569,6 +576,7 @@ def download_remote(
     pinned = {value.strip().lower() for value in expected_sha256 or set() if value.strip()}
     net_errors: list[str] = []
     invalid: list[str] = []
+    sha_mismatch = False
     for url in urls:
         print(f"正在下载远程脚本: {url}")
         try:
@@ -585,6 +593,7 @@ def download_remote(
             print(f"内容不像 YaNet 覆盖脚本，尝试下一个源: {url}")
             continue
         if pinned and digest not in pinned:
+            sha_mismatch = True
             invalid.append(f"{url}: sha256 {digest} 与期望值不符")
             print(f"sha256 校验不通过，尝试下一个源: {url}")
             continue
@@ -604,7 +613,10 @@ def download_remote(
         detail.append("内容校验失败:\n  " + "\n  ".join(invalid))
     if not detail:
         detail.append("未配置任何下载源")
-    raise MergeError("下载远程脚本失败:\n" + "\n".join(detail))
+    message = "下载远程脚本失败:\n" + "\n".join(detail)
+    if sha_mismatch:
+        message += "\n" + PIN_REFRESH_HINT
+    raise MergeError(message)
 
 
 def merge_script(
@@ -663,6 +675,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--cache", type=path_arg, default=CACHE_PATH, help="远程脚本缓存路径")
     parser.add_argument("--offline", action="store_true", help="只使用本地缓存，不访问网络")
     parser.add_argument(
+        "--print-hash",
+        action="store_true",
+        help="只取上游脚本并打印 sha256，不合并、不写任何文件，用于更新 expected_sha256",
+    )
+    parser.add_argument(
         "--allow-policy",
         action="append",
         default=[],
@@ -720,6 +737,8 @@ def main(argv: list[str] | None = None) -> int:
         options = build_merge_options(args, config)
         cli_hashes = normalize_sha256(args.expect_sha256, "--expect-sha256")
         pinned = cli_hashes | set(config.expected_sha256)
+        if args.print_hash:
+            pinned = set()
         if args.offline:
             if not args.cache.exists():
                 raise MergeError(f"--offline 需要缓存文件: {args.cache}")
@@ -727,6 +746,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             script = download_remote(REMOTE_URLS, args.cache, expected_sha256=pinned)
         print(f"上游脚本: {script.source}，sha256 {script.sha256}，长度 {len(script.text)}")
+        if args.print_hash:
+            origin = "本地缓存" if script.from_cache else script.source
+            print(f"可用于锁定的 sha256: {script.sha256}（来源: {origin}）")
+            print("这次没有生成也没有改动任何文件；把上面的值填进 expected_sha256 即可更新锁定")
+            return 0
         combined = merge_script(script.text, rules, options)
         if args.skip_policy_check:
             print("已跳过产物策略名校验")

@@ -57,6 +57,8 @@ python merge_override.py --skip-policy-check
 python merge_override.py --auto-select-max 40
 python merge_override.py --expect-sha256 96dd4374113a4df2d4e90ad1de5b17964581de1d6c41177faee8b13da6fc8215
 python merge_override.py --other-group-type select
+python merge_override.py --print-hash
+python inspect_groups.py
 ```
 
 - `--offline`：使用上次下载的 `.yanet_cache.js`，不访问网络
@@ -65,6 +67,7 @@ python merge_override.py --other-group-type select
 - `--auto-select-max`：覆盖 YAML 的 `auto_select_max`，CLI 优先
 - `--expect-sha256`：追加期望的上游 sha256，可重复，与 YAML 里的列表合并
 - `--other-group-type`：覆盖 YAML 的 `other_group_type`（`url-test` / `select`）
+- `--print-hash`：只打印上游脚本的 sha256，不生成也不改动任何文件（配合锁定使用）
 
 构建期校验清单：
 
@@ -76,6 +79,32 @@ python merge_override.py --other-group-type select
 
 「自动选择」组按地区轮转取样，最多 `auto_select_max` 个节点，避免节点多的订阅把 url-test 探测拉爆；要全量节点就设 0。
 
+### 上游脚本锁定与刷新
+
+`custom_rules.yaml` 里的 `expected_sha256` 会把上游脚本钉在某个版本：上游内容一变，构建直接失败并提示刷新流程，避免别人替换脚本后你无感地跑上。
+
+上游正常升级后，按下面三步刷新：
+
+```bash
+# 看一眼新版本算出来的 sha256，这一步不写任何文件
+python merge_override.py --print-hash
+
+# 把打印出的值粘进 custom_rules.yaml 的 expected_sha256 列表
+# 然后离线重建一次，确认能通过
+python merge_override.py --offline
+```
+
+`--print-hash` 会忽略现有的锁定值，所以旧值就算已经失配也能拿到新值。
+
+### 体检已生成的脚本
+
+```bash
+python inspect_groups.py
+python inspect_groups.py --json
+```
+
+只读脚本，不写任何文件。它用假节点在 node 里真跑一遍 `main()`，把策略组列成表（组名、类型、成员数），并检查空组、组名重名、残留入口类条目、测速组超上限这几类会让 Clash 拒载或体验变差的问题。退出码 0 表示没问题，1 表示发现问题，2 表示环境缺 node。
+
 ### 3. 导入 Clash 客户端
 
 将生成的 `my_merged_override.js` 导入 Clash Verge Rev 或 Mihomo Party 的覆盖脚本配置中。也可以直接使用 jsDelivr 链接导入：
@@ -83,6 +112,8 @@ python merge_override.py --other-group-type select
 ```
 https://fastly.jsdelivr.net/gh/cdlongbow/clash-override@main/my_merged_override.js
 ```
+
+想固定版本、不想被上游自动构建影响，把 `@main` 换成发布标签，例如 `@v1.0`；回滚时换回旧标签即可。
 
 ## 工作原理
 
@@ -115,6 +146,7 @@ https://fastly.jsdelivr.net/gh/cdlongbow/clash-override@main/my_merged_override.
 |------|------|
 | `custom_rules.yaml` | 自定义分流规则（日常只改这个） |
 | `merge_override.py` | 构建脚本，拉取远程脚本并注入自定义规则 |
+| `inspect_groups.py` | 只读体检脚本，列出策略组并检查常见问题 |
 | `my_merged_override.js` | 合并后的覆盖脚本（产物），可在 Clash 中直接使用 |
 | `requirements.txt` | Python 依赖 |
 | `tests/` | 合并逻辑单测 + 产物冒烟测试（需要 node，缺失时自动跳过） |
